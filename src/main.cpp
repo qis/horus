@@ -1,5 +1,5 @@
+#include <horus/eye.hpp>
 #include <horus/log.hpp>
-#include <horus/scan.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -10,6 +10,8 @@
 #include <filesystem>
 #include <cstdlib>
 
+namespace horus {
+
 void process(const std::string& filename, bool gray = true)
 {
   try {
@@ -18,26 +20,11 @@ void process(const std::string& filename, bool gray = true)
       return std::chrono::duration_cast<duration_type>(duration).count();
     };
 
-    // Scan data (rgba).
-    std::vector<std::uint8_t> sd;
-    sd.resize(horus::scan::sw * horus::scan::sh * 4);
-
-    // Scan image (rgba).
-    cv::Mat si(horus::scan::sw, horus::scan::sh, CV_8UC4, sd.data(), horus::scan::sw * 4);
-
-    // Filter data (gray).
-    std::vector<std::uint8_t> fd;
-    fd.resize(horus::scan::sw * horus::scan::sh);
-
-    // Filter image (gray).
-    cv::Mat fi(horus::scan::sw, horus::scan::sh, CV_8UC1, fd.data(), horus::scan::sw);
-
-    // Read scan image.
     cv::Mat scan = cv::imread(filename, cv::IMREAD_UNCHANGED);
     if (scan.empty()) {
       throw std::runtime_error("failed to read image");
     }
-    if (scan.rows != horus::scan::sw || scan.cols != horus::scan::sh) {
+    if (scan.rows != eye::sw || scan.cols != eye::sh) {
       throw std::runtime_error(std::format("invalid image size: {} x {}", scan.rows, scan.cols));
     }
     if (scan.channels() != 4) {
@@ -46,65 +33,65 @@ void process(const std::string& filename, bool gray = true)
     if (scan.depth() != CV_8U) {
       throw std::runtime_error(std::format("invalid image depth identifier: {}", scan.depth()));
     }
+
+    // Scan image.
+    std::vector<std::uint8_t> sd;
+    sd.resize(eye::sw * eye::sh * 4);
+    cv::Mat si(eye::sw, eye::sh, CV_8UC4, sd.data(), eye::sw * 4);
     cv::cvtColor(scan, si, cv::COLOR_BGRA2RGBA);
 
-    // Reusable variables.
-    std::vector<cv::Vec4i> hierarchy;
-    hierarchy.reserve(1024);
+    // Debug image.
+    std::vector<std::uint8_t> dd;
+    dd.resize(eye::sw * eye::sh * 4);
+    cv::Mat di(eye::sw, eye::sh, CV_8UC4, dd.data(), eye::sw * 4);
+    cv::cvtColor(scan, di, cv::COLOR_BGRA2RGBA);
 
-    std::vector<std::vector<cv::Point>> contours;
-    contours.reserve(1024);
+    eye eye;
 
-    std::vector<std::vector<cv::Point>> polygons;
-    polygons.reserve(1024);
-
-    // Measure duration of image processing.
     const auto tp0 = std::chrono::high_resolution_clock::now();
 
-    // Apply filters.
-    horus::scan::filter(sd.data(), fd.data());
+    const auto shoot = eye.scan(sd.data(), 2) > 4.0;
 
-    // Find contours and polygons.
-    const auto shoot = horus::scan::find(fd.data(), hierarchy, contours, polygons) > 4.0;
-
-    // Find contours.
-    cv::findContours(fi, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-    // Find polygons.
-    polygons.resize(contours.size());
-    for (size_t i = 0; i < contours.size(); i++) {
-      cv::convexHull(cv::Mat(contours[i]), polygons[i]);
-    }
-
-    // Measure duration of visualization.
     const auto tp1 = std::chrono::high_resolution_clock::now();
 
-    // Draw overlay.
-    std::vector<uint8_t> overlay(horus::scan::sw * horus::scan::sh);
-    horus::scan::draw(contours, polygons, overlay.data(), sd.data(), 0.3f, shoot, gray);
+    // Draw scan image.
+    eye.draw(sd.data(), 0x09BC2430, -1, 0x08DE29B0, -1);
+    if (shoot) {
+      eye::draw_reticle(sd.data(), 0xFFFFFFFF, 0x1478B7FF);
+    }
 
-    // Report durations and number of contours.
     const auto tp2 = std::chrono::high_resolution_clock::now();
-    const auto d0 = dc(tp1 - tp0);
-    const auto d1 = dc(tp2 - tp1);
-    const auto c0 = contours.size();
-    const auto c1 = polygons.size();
-    horus::log("{} {:0.3f} + {:0.3f} ms ({}/{}, {})", filename, d0, d1, c0, c1, shoot);
 
-    // Show modified scan image.
+    // Draw debug image.
+    eye::desaturate(dd.data());
+    eye.draw(dd.data(), 0x09BC2450, 0xFFFFFFFF, -1, -1);
+
+    // Convert debug and scan images to BGRA.
+    cv::cvtColor(di, di, cv::COLOR_RGBA2BGRA);
     cv::cvtColor(si, si, cv::COLOR_RGBA2BGRA);
-    cv::imshow("Horus", si);
-    cv::waitKey();
+
+    // Combine debug and scan images.
+    cv::Mat image(cv::Size(eye::dw, eye::dh), CV_8UC4);
+    di.copyTo(image(cv::Rect(eye::dw / 2 - eye::sw, eye::sy, eye::sw, eye::sh)));
+    si.copyTo(image(cv::Rect(eye::dw / 2, eye::sy, eye::sw, eye::sh)));
+
+    horus::log("{} [{}] {:0.3f} + {:0.3f} ms", filename, shoot ? '+' : ' ', dc(tp1 - tp0), dc(tp2 - tp1));
+
+    cv::imshow("Horus", image);
   }
   catch (const std::exception& e) {
     horus::log("{}: {}", filename, e.what());
   }
 }
 
+}  // namespace horus
+
 void process_images(std::filesystem::path path)
 {
   path = std::filesystem::canonical(path);
-  cv::namedWindow("Horus", cv::WindowFlags::WINDOW_FULLSCREEN);
+  cv::namedWindow("Horus", cv::WindowFlags::WINDOW_NORMAL);
+  cv::setWindowProperty("Horus", cv::WindowPropertyFlags::WND_PROP_FULLSCREEN, cv::WindowFlags::WINDOW_FULLSCREEN);
+  std::vector<std::string> files;
   const std::filesystem::directory_iterator end;
   for (std::filesystem::directory_iterator it(path); it != end; ++it) {
     if (!std::filesystem::is_regular_file(it->path())) {
@@ -116,7 +103,26 @@ void process_images(std::filesystem::path path)
     if (it->path().filename().string().ends_with("L.png")) {
       continue;
     }
-    process(it->path().string());
+    files.push_back(it->path().string());
+  }
+  std::sort(files.begin(), files.end());
+  int64_t i = 0;
+  int64_t m = static_cast<int64_t>(files.size());
+  while (true) {
+    while (i < 0) {
+      i += m;
+    }
+    while (i >= m) {
+      i -= m;
+    }
+    horus::process(files[i]);
+    if (const auto key = cv::waitKeyEx(); key == 0x1B) {
+      break;
+    } else if (key == 0x250000) {
+      i -= 1;
+    } else {
+      i += 1;
+    }
   }
   cv::destroyWindow("Horus");
 }

@@ -1,8 +1,8 @@
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <horus/eye.hpp>
 #include <horus/log.hpp>
 #include <horus/obs.hpp>
-#include <horus/scan.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <atomic>
@@ -30,17 +30,12 @@ public:
   plugin(obs_source_t* context) noexcept : source_(context)
   {
     name_ = reinterpret_cast<std::uintptr_t>(this);
-    scan_.resize(scan::sw * scan::sh * 4, 0x00);
-    overlay_.resize(scan::sw * scan::sh);
-    hierarchy_.reserve(1024);
-    contours_.reserve(1024);
-    polygons_.reserve(1024);
 
     log("{:016X}: plugin created", name_);
 
     obs_enter_graphics();
 
-    stagesurf_ = gs_stagesurface_create(scan::sw, scan::sh, GS_RGBA);
+    stagesurf_ = gs_stagesurface_create(eye::sw, eye::sh, GS_RGBA);
     if (!stagesurf_) {
       log("{:016X}: could not create stage surface", name_);
       return;
@@ -52,7 +47,7 @@ public:
       return;
     }
 
-    texture_ = gs_texture_create(scan::sw, scan::sh, GS_RGBA_UNORM, 1, nullptr, GS_DYNAMIC);
+    texture_ = gs_texture_create(eye::sw, eye::sh, GS_RGBA_UNORM, 1, nullptr, GS_DYNAMIC);
     if (!texture_) {
       log("{:016X}: could not create texture", name_);
     }
@@ -110,13 +105,13 @@ public:
     gs_blend_state_push();
     gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
     gs_texrender_reset(texrender_);
-    if (gs_texrender_begin(texrender_, scan::sw, scan::sh)) {
+    if (gs_texrender_begin(texrender_, eye::sw, eye::sh)) {
       gs_projection_push();
       gs_ortho(
-        float(scan::sx),
-        float(scan::sx + scan::sw),
-        float(scan::sy),
-        float(scan::sy + scan::sh),
+        float(eye::sx),
+        float(eye::sx + eye::sw),
+        float(eye::sy),
+        float(eye::sy + eye::sh),
         -100.0f,
         100.0f);
       obs_source_video_render(target);
@@ -127,7 +122,8 @@ public:
       uint8_t* data = nullptr;
       gs_stage_texture(stagesurf_, gs_texrender_get_texture(texrender_));
       if (gs_stagesurface_map(stagesurf_, &data, &line)) {
-        // Take first screenshot.
+        const auto shoot = eye_.scan(data, 2) > 4.0;
+
         size_t screenshot_index = 0;
         bool screenshot_expected = true;
         if (screenshot_request.compare_exchange_strong(screenshot_expected, false)) {
@@ -135,16 +131,13 @@ public:
           screenshot(data, screenshot_index++);
         }
 
-        // Apply filters.
-        scan::filter(data, scan_.data());
-
-        // Find contours and polygons.
-        const auto shoot = scan::find(scan_.data(), hierarchy_, contours_, polygons_) > 4.0;
-
 #if HORUS_DRAW_SCANS
-        // Draw overlay.
-        scan::draw(contours_, polygons_, overlay_.data(), data, 0.3f, shoot, false);
-        gs_texture_set_image(texture_, data, scan::sw * 4, false);
+        //eye::desaturate(data);
+        eye_.draw(data, 0x09BC2430, -1, 0x08DE29B0, -1);
+        if (shoot) {
+          eye::draw_reticle(data, 0xFFFFFFFF, 0x1478B7FF);
+        }
+        gs_texture_set_image(texture_, data, eye::sw * 4, false);
         overlay = true;
 #endif
 
@@ -228,12 +221,12 @@ public:
 
   static void screenshot(uint8_t* data, size_t counter) noexcept
   {
-    std::unique_ptr<uint8_t[]> rgba(new uint8_t[scan::sw * scan::sh * 4]);
-    std::memcpy(rgba.get(), data, scan::sw * scan::sh * 4);
+    std::unique_ptr<uint8_t[]> rgba(new uint8_t[eye::sw * eye::sh * 4]);
+    std::memcpy(rgba.get(), data, eye::sw * eye::sh * 4);
     if (auto sp = screenshot_thread_pool) {
       boost::asio::post(*sp, [rgba = std::move(rgba), counter]() noexcept {
         try {
-          cv::Mat image(scan::sw, scan::sh, CV_8UC4, rgba.get(), 1024 * 4);
+          cv::Mat image(eye::sw, eye::sh, CV_8UC4, rgba.get(), 1024 * 4);
           cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
           cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:09d}.png", counter), image);
         }
@@ -252,12 +245,7 @@ private:
   gs_effect_t* effect_{ nullptr };
 
   std::uintptr_t name_{ 0 };
-
-  std::vector<uint8_t> scan_;
-  std::vector<uint8_t> overlay_;
-  std::vector<cv::Vec4i> hierarchy_;
-  std::vector<std::vector<cv::Point>> contours_;
-  std::vector<std::vector<cv::Point>> polygons_;
+  eye eye_;
 
 #if HORUS_SHOW_STATS
   clock::time_point frame_time_point_{ clock::now() };

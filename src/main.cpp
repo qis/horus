@@ -20,64 +20,62 @@ void process(const std::string& filename, bool gray = true)
       return std::chrono::duration_cast<duration_type>(duration).count();
     };
 
-    cv::Mat scan = cv::imread(filename, cv::IMREAD_UNCHANGED);
-    if (scan.empty()) {
+    cv::Mat image = cv::imread(filename, cv::IMREAD_UNCHANGED);
+    if (image.empty()) {
       throw std::runtime_error("failed to read image");
     }
-    if (scan.rows != eye::sw || scan.cols != eye::sh) {
-      throw std::runtime_error(std::format("invalid image size: {} x {}", scan.rows, scan.cols));
+    if (image.rows != eye::sw || image.cols != eye::sh) {
+      throw std::runtime_error(std::format("invalid image size: {} x {}", image.rows, image.cols));
     }
-    if (scan.channels() != 4) {
-      throw std::runtime_error(std::format("invalid image channels number: {}", scan.channels()));
+    if (image.channels() != 4) {
+      throw std::runtime_error(std::format("invalid image channels number: {}", image.channels()));
     }
-    if (scan.depth() != CV_8U) {
-      throw std::runtime_error(std::format("invalid image depth identifier: {}", scan.depth()));
+    if (image.depth() != CV_8U) {
+      throw std::runtime_error(std::format("invalid image depth identifier: {}", image.depth()));
     }
 
-    // Scan image.
+    // Source image.
     std::vector<std::uint8_t> sd;
     sd.resize(eye::sw * eye::sh * 4);
     cv::Mat si(eye::sw, eye::sh, CV_8UC4, sd.data(), eye::sw * 4);
-    cv::cvtColor(scan, si, cv::COLOR_BGRA2RGBA);
+    cv::cvtColor(image, si, cv::COLOR_BGRA2RGBA);
 
-    // Debug image.
-    std::vector<std::uint8_t> dd;
-    dd.resize(eye::sw * eye::sh * 4);
-    cv::Mat di(eye::sw, eye::sh, CV_8UC4, dd.data(), eye::sw * 4);
-    cv::cvtColor(scan, di, cv::COLOR_BGRA2RGBA);
+    // Filter image.
+    std::vector<std::uint8_t> fd;
+    fd.resize(eye::sw * eye::sh * 4);
+    cv::Mat fi(eye::sw, eye::sh, CV_8UC4, fd.data(), eye::sw * 4);
+    cv::cvtColor(image, fi, cv::COLOR_BGRA2RGBA);
 
+    // Scan source image.
     eye eye;
-
+    
     const auto tp0 = std::chrono::high_resolution_clock::now();
-
     const auto shoot = eye.scan(sd.data(), 2) > 4.0;
 
+    // Draw scan as overlay.
     const auto tp1 = std::chrono::high_resolution_clock::now();
-
-    // Draw scan image.
     eye.draw(sd.data(), 0x09BC2430, -1, 0x08DE29B0, -1);
     if (shoot) {
       eye::draw_reticle(sd.data(), 0xFFFFFFFF, 0x1478B7FF);
     }
 
+    // Log scan and draw durations.
     const auto tp2 = std::chrono::high_resolution_clock::now();
-
-    // Draw debug image.
-    eye::desaturate(dd.data());
-    eye.draw(dd.data(), 0x09BC2450, 0xFFFFFFFF, -1, -1);
-
-    // Convert debug and scan images to BGRA.
-    cv::cvtColor(di, di, cv::COLOR_RGBA2BGRA);
-    cv::cvtColor(si, si, cv::COLOR_RGBA2BGRA);
-
-    // Combine debug and scan images.
-    cv::Mat image(cv::Size(eye::dw, eye::dh), CV_8UC4);
-    di.copyTo(image(cv::Rect(eye::dw / 2 - eye::sw, eye::sy, eye::sw, eye::sh)));
-    si.copyTo(image(cv::Rect(eye::dw / 2, eye::sy, eye::sw, eye::sh)));
-
     horus::log("{} [{}] {:0.3f} + {:0.3f} ms", filename, shoot ? '+' : ' ', dc(tp1 - tp0), dc(tp2 - tp1));
 
-    cv::imshow("Horus", image);
+    // Draw filter as overlay.
+    eye::desaturate(fd.data());
+    eye.draw(fd.data(), 0x09BC2450, 0xFFFFFFFF, -1, -1);
+
+    // Convert filter and scan images to BGRA.
+    cv::cvtColor(fi, fi, cv::COLOR_RGBA2BGRA);
+    cv::cvtColor(si, si, cv::COLOR_RGBA2BGRA);
+
+    // Show filter and scan images.
+    cv::Mat visual(cv::Size(eye::dw, eye::dh), CV_8UC4);
+    fi.copyTo(visual(cv::Rect(eye::dw / 2 - eye::sw, eye::sy, eye::sw, eye::sh)));
+    si.copyTo(visual(cv::Rect(eye::dw / 2, eye::sy, eye::sw, eye::sh)));
+    cv::imshow("Horus", visual);
   }
   catch (const std::exception& e) {
     horus::log("{}: {}", filename, e.what());
@@ -86,7 +84,7 @@ void process(const std::string& filename, bool gray = true)
 
 }  // namespace horus
 
-void process_images(std::filesystem::path path)
+void process(std::filesystem::path path)
 {
   path = std::filesystem::canonical(path);
   cv::namedWindow("Horus", cv::WindowFlags::WINDOW_NORMAL);
@@ -127,67 +125,27 @@ void process_images(std::filesystem::path path)
   cv::destroyWindow("Horus");
 }
 
-void process_dir(std::filesystem::path path)
-{
-  path = std::filesystem::canonical(path);
-  std::vector<std::filesystem::path> paths;
-  const std::filesystem::directory_iterator end;
-  for (std::filesystem::directory_iterator it(path); it != end; ++it) {
-    auto filename = it->path().filename().string();
-    if (filename.size() < 3 || !std::isdigit(filename[0]) || !std::isdigit(filename[1])) {
-      continue;
-    }
-    if (std::filesystem::is_directory(path / filename)) {
-      paths.emplace_back(path / filename);
-    }
-  }
-  for (auto c : { "01 Clean", "02 Chaotic", "03 VFX Ovrload", "04 Missing Enemies" }) {
-    for (const auto& e : paths) {
-      std::puts((e / c).string().data());
-      process_images(e / c);
-    }
-  }
-}
-
 int main(int argc, char* argv[])
 {
   horus::logger logger("C:/OBS/horus.log", true);
   try {
-    //std::puts(std::format("{}", horus::image::color_difference_max()).data());
-    //process("C:/OBS/img/000005005.png", "C:/OBS/img/tmp/000005005.png", true);
-    //process("C:/OBS/img/01 Lijiang Tower/01 Clean/000000000.png", "C:/OBS/img/000005008.png", true);
-    //return EXIT_SUCCESS;
-
-    //process_dir("C:/OBS/img");
-    process_images("C:/OBS/img/src");
-
-
-    //if (!std::filesystem::is_directory("C:/OBS/img/tmp")) {
-    //  std::filesystem::create_directory("C:/OBS/img/tmp");
-    //}
-
-    //const std::filesystem::directory_iterator end;
-    //for (std::filesystem::directory_iterator it("C:/OBS/img"); it != end; ++it) {
-    //  if (it->path().extension() == ".png") {
-    //    const auto name = it->path().filename().string();
-    //    process("C:/OBS/img/" + name, "C:/OBS/img/tmp/" + name);
-    //  }
-    //}
-
-    //std::vector<std::string> remove;
-    //const std::filesystem::directory_iterator end;
-    //for (std::filesystem::directory_iterator it("C:/OBS/img/src"); it != end; ++it) {
-    //  if (it->path().extension() == ".png") {
-    //    const auto name = it->path().filename().string();
-    //    if (!std::filesystem::exists("C:/OBS/img/tmp/" + name)) {
-    //      remove.emplace_back(name);
-    //    }
-    //  }
-    //}
-    //for (const auto& e : remove) {
-    //  std::puts(("C:/OBS/img/src/" + e).data());
-    //  std::filesystem::remove("C:/OBS/img/src/" + e);
-    //}
+    auto path = std::filesystem::canonical("C:/OBS/img/src");
+    std::vector<std::filesystem::path> paths;
+    const std::filesystem::directory_iterator end;
+    for (std::filesystem::directory_iterator it(path); it != end; ++it) {
+      auto filename = it->path().filename().string();
+      if (filename.size() < 3 || !std::isdigit(filename[0]) || !std::isdigit(filename[1])) {
+        continue;
+      }
+      if (std::filesystem::is_directory(path / filename)) {
+        paths.emplace_back(path / filename);
+      }
+    }
+    for (auto c : { "01 Clean", "02 Chaotic", "03 VFX Ovrload", "04 Missing Enemies" }) {
+      for (const auto& e : paths) {
+        process(e / c);
+      }
+    }
   }
   catch (const std::exception& e) {
     horus::log("error: {}", e.what());

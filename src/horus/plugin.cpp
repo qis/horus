@@ -30,6 +30,7 @@ public:
   plugin(obs_source_t* context) noexcept : source_(context)
   {
     name_ = reinterpret_cast<std::uintptr_t>(this);
+    screenshot_.resize(eye::sw * eye::sh * 4 * 2);
 
     log("{:016X}: plugin created", name_);
 
@@ -124,15 +125,21 @@ public:
       if (gs_stagesurface_map(stagesurf_, &data, &line)) {
         const auto shoot = eye_.scan(data, 2) > 4.0;
 
-        size_t screenshot_index = 0;
         bool screenshot_expected = true;
         if (screenshot_request.compare_exchange_strong(screenshot_expected, false)) {
-          screenshot_index = screenshot_counter.fetch_add(2);
-          screenshot(data, screenshot_index++);
+          const auto index = screenshot_counter.fetch_add(1);
+          std::copy(data, data + eye::sw * eye::sh * 4, screenshot_.data());
+          std::copy(data, data + eye::sw * eye::sh * 4, screenshot_.data() + eye::sw * eye::sh * 4);
+          eye::desaturate(screenshot_.data());
+          eye_.draw(screenshot_.data(), 0x09BC2450, 0xFFFFFFFF, -1, -1);
+          eye_.draw(screenshot_.data() + eye::sw * eye::sh * 4, 0x09BC2430, -1, 0x08DE29B0, -1);
+          if (shoot) {
+            eye::draw_reticle(screenshot_.data() + eye::sw * eye::sh * 4, 0xFFFFFFFF, 0x1478B7FF);
+          }
+          screenshot(screenshot_.data(), index);
         }
 
 #if HORUS_DRAW_SCANS
-        //eye::desaturate(data);
         eye_.draw(data, 0x09BC2430, -1, 0x08DE29B0, -1);
         if (shoot) {
           eye::draw_reticle(data, 0xFFFFFFFF, 0x1478B7FF);
@@ -140,12 +147,6 @@ public:
         gs_texture_set_image(texture_, data, eye::sw * 4, false);
         overlay = true;
 #endif
-
-        // Take second screenshot.
-        if (screenshot_index) {
-          screenshot(data, screenshot_index);
-        }
-
         gs_stagesurface_unmap(stagesurf_);
       }
     }
@@ -219,14 +220,21 @@ public:
     screenshot_request.store(true, std::memory_order_release);
   }
 
-  static void screenshot(uint8_t* data, size_t counter) noexcept
+  static void screenshot(uint8_t* image, size_t counter) noexcept
   {
-    std::unique_ptr<uint8_t[]> rgba(new uint8_t[eye::sw * eye::sh * 4]);
-    std::memcpy(rgba.get(), data, eye::sw * eye::sh * 4);
+    std::unique_ptr<uint8_t[]> data(new uint8_t[eye::sw * eye::sh * 4 * 2]);
+    std::memcpy(data.get(), image, eye::sw * eye::sh * 4 * 2);
     if (auto sp = screenshot_thread_pool) {
-      boost::asio::post(*sp, [rgba = std::move(rgba), counter]() noexcept {
+      boost::asio::post(*sp, [data = std::move(data), counter]() noexcept {
         try {
-          cv::Mat image(eye::sw, eye::sh, CV_8UC4, rgba.get(), 1024 * 4);
+          cv::Mat image(cv::Size(eye::sw * 2, eye::sh), CV_8UC4);
+
+          cv::Mat fi(eye::sw, eye::sh, CV_8UC4, data.get(), eye::sw * 4);
+          fi.copyTo(image(cv::Rect(0, 0, eye::sw, eye::sh)));
+
+          cv::Mat si(eye::sw, eye::sh, CV_8UC4, data.get() + eye::sw * eye::sh * 4, eye::sw * 4);
+          si.copyTo(image(cv::Rect(eye::sw, 0, eye::sw, eye::sh)));
+
           cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
           cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:09d}.png", counter), image);
         }
@@ -252,6 +260,8 @@ private:
   std::chrono::nanoseconds processing_duration_{ 0 };
   std::size_t frame_counter_{ 0 };
 #endif
+
+  std::vector<uint8_t> screenshot_;
 
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::atomic_size_t screenshot_counter{ 0 };

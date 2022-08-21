@@ -1,0 +1,9 @@
+[requires]
+boost/[x]
+libpng/[x]
+opencv/[x]
+onetbb/[x]
+
+[generators]
+deploy
+cmake_find_package

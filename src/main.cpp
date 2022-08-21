@@ -48,7 +48,7 @@ void process(const std::string& filename, bool gray = true)
 
     // Scan source image.
     eye eye;
-    
+
     const auto tp0 = std::chrono::high_resolution_clock::now();
     const auto shoot = eye.scan(sd.data(), 2) > 4.0;
 
@@ -84,68 +84,48 @@ void process(const std::string& filename, bool gray = true)
 
 }  // namespace horus
 
-void process(std::filesystem::path path)
-{
-  path = std::filesystem::canonical(path);
-  cv::namedWindow("Horus", cv::WindowFlags::WINDOW_NORMAL);
-  cv::setWindowProperty("Horus", cv::WindowPropertyFlags::WND_PROP_FULLSCREEN, cv::WindowFlags::WINDOW_FULLSCREEN);
-  std::vector<std::string> files;
-  const std::filesystem::directory_iterator end;
-  for (std::filesystem::directory_iterator it(path); it != end; ++it) {
-    if (!std::filesystem::is_regular_file(it->path())) {
-      continue;
-    }
-    if (it->path().extension() != ".png") {
-      continue;
-    }
-    if (it->path().filename().string().ends_with("L.png")) {
-      continue;
-    }
-    files.push_back(it->path().string());
-  }
-  std::sort(files.begin(), files.end());
-  int64_t i = 0;
-  int64_t m = static_cast<int64_t>(files.size());
-  while (true) {
-    while (i < 0) {
-      i += m;
-    }
-    while (i >= m) {
-      i -= m;
-    }
-    horus::process(files[i]);
-    if (const auto key = cv::waitKeyEx(); key == 0x1B) {
-      break;
-    } else if (key == 0x250000) {
-      i -= 1;
-    } else {
-      i += 1;
-    }
-  }
-  cv::destroyWindow("Horus");
-}
-
 int main(int argc, char* argv[])
 {
   horus::logger logger("C:/OBS/horus.log", true);
   try {
-    auto path = std::filesystem::canonical("C:/OBS/img/src");
-    std::vector<std::filesystem::path> paths;
+    cv::namedWindow("Horus", cv::WindowFlags::WINDOW_NORMAL);
+    const auto property = cv::WindowPropertyFlags::WND_PROP_FULLSCREEN;
+    const auto value = cv::WindowFlags::WINDOW_FULLSCREEN;
+    cv::setWindowProperty("Horus", property, value);
+
+    std::vector<std::string> files;
     const std::filesystem::directory_iterator end;
-    for (std::filesystem::directory_iterator it(path); it != end; ++it) {
-      auto filename = it->path().filename().string();
-      if (filename.size() < 3 || !std::isdigit(filename[0]) || !std::isdigit(filename[1])) {
+    for (std::filesystem::directory_iterator it("C:/OBS/img/src"); it != end; ++it) {
+      if (!std::filesystem::is_regular_file(it->path())) {
         continue;
       }
-      if (std::filesystem::is_directory(path / filename)) {
-        paths.emplace_back(path / filename);
+      if (it->path().extension() != ".png" || it->path().filename().string().ends_with("L.png")) {
+        continue;
+      }
+      files.push_back(it->path().string());
+    }
+    std::sort(files.begin(), files.end());
+
+    int64_t i = 0;
+    int64_t m = static_cast<int64_t>(files.size());
+    while (true) {
+      while (i < 0) {
+        i += m;
+      }
+      while (i >= m) {
+        i -= m;
+      }
+      horus::process(files[i]);
+      if (const auto key = cv::waitKeyEx(); key == 0x1B || key == 0x71) {
+        break;
+      } else if (key == 0x250000) {
+        i -= 1;
+      } else {
+        i += 1;
       }
     }
-    for (auto c : { "01 Clean", "02 Chaotic", "03 VFX Ovrload", "04 Missing Enemies" }) {
-      for (const auto& e : paths) {
-        process(e / c);
-      }
-    }
+
+    cv::destroyWindow("Horus");
   }
   catch (const std::exception& e) {
     horus::log("error: {}", e.what());

@@ -1,6 +1,8 @@
 #include "eye.hpp"
 #include <opencv2/imgproc.hpp>
 #include <tbb/parallel_for.h>
+#include <algorithm>
+#include <execution>
 
 namespace horus {
 namespace {
@@ -11,10 +13,8 @@ constexpr bool is_outline(const uint8_t* si) noexcept
   return si[0] > 0xA0 && si[1] < 0x60 && si[2] > 0xA0;
 }
 
-// Version: 0.1
 // Returns true if the `si` src iterator pixel is magenta and
 // 1-4 adjacent pixels also return true for `depth` recursive calls.
-// Fast, but too many gaps in the outline prevent accurate polygon creation.
 constexpr bool is_outline(const uint8_t* si, unsigned depth) noexcept
 {
   constexpr unsigned max = 4;            // max number of adjacent outline pixels (0-8)
@@ -169,17 +169,19 @@ eye::eye() :
 
 double eye::scan(const uint8_t* image, unsigned depth) noexcept
 {
-  // Get outlines.
+  // Prepare outlines buffer.
   std::memset(outlines_.data(), 0, sw * sh);
   const auto range = tbb::blocked_range<size_t>(depth + 1, sh - depth - 1, 64);
+
+  // Get outlines.
   tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
     const auto rb = range.begin();
     const auto re = range.end();
     auto si = image + rb * sw * 4;         // src iterator
     auto di = outlines_.data() + rb * sw;  // dst iterator
     for (auto y = rb; y < re; y++) {
-      si += 4;
-      di += 1;
+      si += 4 * (depth + 1);
+      di += depth + 1;
       for (auto x = depth + 1; x < sw - depth - 1; x++) {
         if (is_outline(si, depth)) {
           di[0] = 0xFF;
@@ -187,8 +189,8 @@ double eye::scan(const uint8_t* image, unsigned depth) noexcept
         si += 4;
         di += 1;
       }
-      si += 4;
-      di += 1;
+      si += 4 * (depth + 1);
+      di += depth + 1;
     }
   });
 

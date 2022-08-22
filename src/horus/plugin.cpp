@@ -123,7 +123,7 @@ public:
       uint8_t* data = nullptr;
       gs_stage_texture(stagesurf_, gs_texrender_get_texture(texrender_));
       if (gs_stagesurface_map(stagesurf_, &data, &line)) {
-        const auto shoot = eye_.scan(data, 2) > 4.0;
+        const auto shoot = eye_.scan(data);
 
         bool screenshot_expected = true;
         if (screenshot_request.compare_exchange_strong(screenshot_expected, false)) {
@@ -131,8 +131,8 @@ public:
           std::copy(data, data + eye::sw * eye::sh * 4, screenshot_.data());
           std::copy(data, data + eye::sw * eye::sh * 4, screenshot_.data() + eye::sw * eye::sh * 4);
           eye::desaturate(screenshot_.data());
-          eye_.draw(screenshot_.data(), 0x09BC2450, 0xFFFFFFFF, -1, -1);
-          eye_.draw(screenshot_.data() + eye::sw * eye::sh * 4, 0x09BC2430, -1, 0x08DE29B0, -1);
+          eye_.draw(screenshot_.data(), 0x09BC2460, 0xFFFFFFFF, -1, -1);
+          eye_.draw(screenshot_.data() + eye::sw * eye::sh * 4, 0x09BC2460, -1, 0x08DE29C0, -1);
           if (shoot) {
             eye::draw_reticle(screenshot_.data() + eye::sw * eye::sh * 4, 0xFFFFFFFF, 0x1478B7FF);
           }
@@ -140,7 +140,7 @@ public:
         }
 
 #if HORUS_DRAW_SCANS
-        eye_.draw(data, 0x09BC2430, -1, 0x08DE29B0, -1);
+        eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
         if (shoot) {
           eye::draw_reticle(data, 0xFFFFFFFF, 0x1478B7FF);
         }

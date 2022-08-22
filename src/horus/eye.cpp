@@ -2,118 +2,9 @@
 #include <opencv2/imgproc.hpp>
 #include <tbb/parallel_for.h>
 #include <algorithm>
-#include <execution>
 
 namespace horus {
 namespace {
-
-// Returns true if the `si` src iterator pixel is magenta.
-constexpr bool is_outline(const uint8_t* si) noexcept
-{
-  return si[0] > 0xA0 && si[1] < 0x60 && si[2] > 0xA0;
-}
-
-// Returns true if the `si` src iterator pixel is magenta and
-// 1-4 adjacent pixels also return true for `depth` recursive calls.
-constexpr bool is_outline(const uint8_t* si, unsigned depth) noexcept
-{
-  constexpr unsigned max = 4;            // max number of adjacent outline pixels (0-8)
-  const uint8_t* pi = si - eye::sw * 4;  // pixel above the src iterator
-  const uint8_t* ni = si + eye::sw * 4;  // pixel below the src iterator
-  if (!is_outline(si)) {
-    return false;
-  }
-  unsigned counter = 0;
-  unsigned adjacent_counter = 0;
-  if (is_outline(pi - 4)) {
-    if constexpr (max < 1 || max > 7) {
-      return max > 7;
-    } else {
-      counter++;
-      if (depth == 0 || is_outline(pi - 4, depth - 1)) {
-        adjacent_counter++;
-      }
-    }
-  }
-  if (is_outline(pi)) {
-    counter++;
-    if (depth == 0 || is_outline(pi, depth - 1)) {
-      adjacent_counter++;
-    }
-    if constexpr (max < 2) {
-      if (counter > max) {
-        return false;
-      }
-    }
-  }
-  if (is_outline(pi + 4)) {
-    counter++;
-    if (depth == 0 || is_outline(pi + 4, depth - 1)) {
-      adjacent_counter++;
-    }
-    if constexpr (max < 3) {
-      if (counter > max) {
-        return false;
-      }
-    }
-  }
-  if (is_outline(si - 4)) {
-    counter++;
-    if (depth == 0 || is_outline(si - 4, depth - 1)) {
-      adjacent_counter++;
-    }
-    if constexpr (max < 4) {
-      if (counter > max) {
-        return false;
-      }
-    }
-  }
-  if (is_outline(si + 4)) {
-    counter++;
-    if (depth == 0 || is_outline(si + 4, depth - 1)) {
-      adjacent_counter++;
-    }
-    if constexpr (max < 5) {
-      if (counter > max) {
-        return false;
-      }
-    }
-  }
-  if (is_outline(ni - 4)) {
-    counter++;
-    if (depth == 0 || is_outline(ni - 4, depth - 1)) {
-      adjacent_counter++;
-    }
-    if constexpr (max < 6) {
-      if (counter > max) {
-        return false;
-      }
-    }
-  }
-  if (is_outline(ni)) {
-    counter++;
-    if (depth == 0 || is_outline(ni, depth - 1)) {
-      adjacent_counter++;
-    }
-    if constexpr (max < 7) {
-      if (counter > max) {
-        return false;
-      }
-    }
-  }
-  if (is_outline(ni + 4)) {
-    counter++;
-    if (depth == 0 || is_outline(ni + 4, depth - 1)) {
-      adjacent_counter++;
-    }
-    if constexpr (max < 8) {
-      if (counter > max) {
-        return false;
-      }
-    }
-  }
-  return counter && counter < max + 1 && adjacent_counter && adjacent_counter < max + 1;
-}
 
 class overlay_color {
 public:
@@ -155,54 +46,107 @@ private:
 }  // namespace
 
 eye::eye() :
+  outlines_buffer_(sw * sh),
   outlines_(sw * sh),
   outlines_image_(sw, sh, CV_8UC1, outlines_.data(), sw),
   overlays_(sw * sh),
   overlays_image_(sw, sh, CV_8UC1, overlays_.data(), sw),
-  dilate_kernel_(cv::getStructuringElement(cv::MORPH_ELLIPSE, { 6, 6 })),
-  erode_kernel_(cv::getStructuringElement(cv::MORPH_ELLIPSE, { 6, 6 }))
+  close_kernel_(cv::getStructuringElement(cv::MORPH_RECT, { 12, 12 })),
+  merge_kernel_(cv::getStructuringElement(cv::MORPH_RECT, { 24, 24 }))
 {
   hierarchy_.reserve(1024);
   contours_.reserve(1024);
   polygons_.reserve(1024);
 }
 
-double eye::scan(const uint8_t* image, unsigned depth) noexcept
+bool eye::scan(const uint8_t* image) noexcept
 {
-  // Prepare outlines buffer.
+  // Prepare outlines and outlines buffer.
   std::memset(outlines_.data(), 0, sw * sh);
-  const auto range = tbb::blocked_range<size_t>(depth + 1, sh - depth - 1, 64);
+  std::memset(outlines_buffer_.data(), 0, sw * sh);
+  const auto range = tbb::blocked_range<size_t>(1, sh - 1, 64);
 
   // Get outlines.
   tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
     const auto rb = range.begin();
     const auto re = range.end();
-    auto si = image + rb * sw * 4;         // src iterator
-    auto di = outlines_.data() + rb * sw;  // dst iterator
+    auto si = image + rb * sw * 4;                // src iterator
+    auto di = outlines_buffer_.data() + rb * sw;  // dst iterator
     for (auto y = rb; y < re; y++) {
-      si += 4 * (depth + 1);
-      di += depth + 1;
-      for (auto x = depth + 1; x < sw - depth - 1; x++) {
-        if (is_outline(si, depth)) {
-          di[0] = 0xFF;
-        }
+      si += 4;
+      di += 1;
+      for (auto x = 1; x < sw - 1; x++) {
+        constexpr auto mr = (oc >> 16 & 0xFF);  // minimum red
+        constexpr auto mg = (oc >> 8 & 0xFF);   // maximum green
+        constexpr auto mb = (oc & 0xFF);        // minimum blue
+        di[0] = si[0] > mr && si[1] < mg && si[2] > mb ? 0x01 : 0x00;
         si += 4;
         di += 1;
       }
-      si += 4 * (depth + 1);
-      di += depth + 1;
+      si += 4;
+      di += 1;
+    }
+  });
+
+  // Remove outline pixels that have too many or no sorrounding outline pixels.
+  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
+    const auto rb = range.begin();
+    const auto re = range.end();
+    auto si = outlines_buffer_.data() + rb * sw;  // src iterator
+    auto pi = si - sw;                            // pixel above the dst iterator
+    auto ni = si + sw;                            // pixel below the dst iterator
+    auto di = outlines_.data() + rb * sw;         // dst iterator
+    for (auto y = rb; y < re; y++) {
+      for (auto x = 1; x < sw - 0; x++) {
+        if (si[1]) {
+          const auto count = pi[0] + pi[1] + pi[2] + si[0] + si[1] + si[2] + ni[0] + ni[1] + ni[2];
+          if (count > 1 && count < 6) {
+            di[1] = 0x01;
+          }
+        }
+        si += 1;
+        pi += 1;
+        ni += 1;
+        di += 1;
+      }
+      si += 2;
+      pi += 2;
+      ni += 2;
+      di += 2;
+    }
+  });
+
+  // Remove single outline pixels.
+  std::memcpy(outlines_buffer_.data(), outlines_.data(), sw * sh);
+  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
+    const auto rb = range.begin();
+    const auto re = range.end();
+    auto si = outlines_buffer_.data() + rb * sw;  // src iterator
+    auto pi = si - sw;                            // pixel above the dst iterator
+    auto ni = si + sw;                            // pixel below the dst iterator
+    auto di = outlines_.data() + rb * sw;         // dst iterator
+    for (auto y = rb; y < re; y++) {
+      for (auto x = 1; x < sw - 0; x++) {
+        if (si[1] && pi[0] + pi[1] + pi[2] + si[0] + si[1] + si[2] + ni[0] + ni[1] + ni[2] == 1) {
+          di[1] = 0x00;
+        }
+        si += 1;
+        pi += 1;
+        ni += 1;
+        di += 1;
+      }
+      si += 2;
+      pi += 2;
+      ni += 2;
+      di += 2;
     }
   });
 
   // Remove small gaps in outlines.
-  //cv::dilate(outlines_image_, outlines_image_, dilate_kernel_);
-  //cv::erode(outlines_image_, outlines_image_, erode_kernel_);
+  cv::morphologyEx(outlines_image_, outlines_image_, cv::MORPH_CLOSE, close_kernel_);
 
   // Find countours.
   cv::findContours(outlines_image_, contours_, hierarchy_, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-  // TODO: Merge countours that likely belong to a single target.
-  // TODO: Merge countours that likely belong to a single target.
 
   // Create polygons.
   polygons_.resize(contours_.size());
@@ -210,14 +154,42 @@ double eye::scan(const uint8_t* image, unsigned depth) noexcept
     cv::convexHull(cv::Mat(contours_[i]), polygons_[i]);
   }
 
-  // Return distance between the center of image and the nearest containing polygon edge.
-  const auto center = cv::Point2f(sw / 2.0f, sh / 2.0f);
+  // Render polygons that have a large surface.
+  // Make sure that all polygons have a good aspect ratio and area size.
+  std::memset(outlines_.data(), 0, sw * sh);
   for (size_t i = 0, size = polygons_.size(); i < size; i++) {
-    if (auto distance = cv::pointPolygonTest(polygons_[i], center, true); distance > 0.0) {
-      return distance;
+    const auto rect = cv::boundingRect(polygons_[i]);
+    if (rect.width < rect.height * 3 && cv::contourArea(polygons_[i]) > 480.0) {
+      cv::drawContours(outlines_image_, polygons_, i, cv::Scalar(255), 1, cv::LINE_4);
     }
   }
-  return -1.0;
+
+  // Remove large gaps in outlines.
+  cv::morphologyEx(outlines_image_, outlines_image_, cv::MORPH_CLOSE, merge_kernel_);
+
+  // Find countours.
+  cv::findContours(outlines_image_, contours_, hierarchy_, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+  // Create polygons.
+  polygons_.resize(contours_.size());
+  for (size_t i = 0, size = contours_.size(); i < size; i++) {
+    cv::convexHull(cv::Mat(contours_[i]), polygons_[i]);
+  }
+
+  // Check if the center of the image is targeting an enemy.
+  const auto center = cv::Point2f(sw / 2.0f, sh / 2.0f);
+  for (size_t i = 0, size = polygons_.size(); i < size; i++) {
+    if (auto distance = cv::pointPolygonTest(polygons_[i], center, true); distance > 2.0) {
+      const auto rect = cv::boundingRect(polygons_[i]);
+      const auto x = sw / 2;
+      const auto l = rect.x + rect.width / 5;
+      const auto r = rect.x + rect.width - rect.width / 5;
+      if (l < x && x < r) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept
@@ -228,12 +200,12 @@ void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) n
     for (size_t i = 0, size = polygons_.size(); i < size; i++) {
       cv::drawContours(overlays_image_, polygons_, i, cv::Scalar(255), -1, cv::LINE_AA);
     }
-    draw(overlays_.data(), image, static_cast<uint32_t>(pf));
+    draw_overlays(image, static_cast<uint32_t>(pf));
   }
 
   // Draw outlines.
   if (os >= 0) {
-    draw(outlines_.data(), image, static_cast<uint32_t>(os));
+    draw_outlines(image, static_cast<uint32_t>(os));
   }
 
   // Draw polygons.
@@ -242,7 +214,7 @@ void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) n
     for (size_t i = 0, size = polygons_.size(); i < size; i++) {
       cv::drawContours(overlays_image_, polygons_, i, cv::Scalar(255), 1, cv::LINE_AA);
     }
-    draw(overlays_.data(), image, static_cast<uint32_t>(ps));
+    draw_overlays(image, static_cast<uint32_t>(ps));
   }
 
   // Draw contours.
@@ -251,7 +223,7 @@ void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) n
     for (size_t i = 0, size = contours_.size(); i < size; i++) {
       cv::drawContours(overlays_image_, contours_, i, cv::Scalar(255), 1, cv::LINE_AA);
     }
-    draw(overlays_.data(), image, static_cast<uint32_t>(cs));
+    draw_overlays(image, static_cast<uint32_t>(cs));
   }
 }
 
@@ -321,15 +293,36 @@ void eye::desaturate(uint8_t* image) noexcept
   });
 }
 
-void eye::draw(const uint8_t* overlays, uint8_t* image, uint32_t oc) noexcept
+void eye::draw_outlines(uint8_t* image, uint32_t oc) noexcept
 {
   const auto range = tbb::blocked_range<size_t>(0, sh, 64);
   const auto color = overlay_color(static_cast<uint32_t>(oc));
   tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
     const size_t rb = range.begin();
     const size_t re = range.end();
-    auto si = overlays + rb * sw;   // src iterator
-    auto di = image + rb * sw * 4;  // dst iterator
+    auto si = outlines_.data() + rb * sw;  // src iterator
+    auto di = image + rb * sw * 4;         // dst iterator
+    for (auto y = rb; y < re; y++) {
+      for (auto x = 0; x < sw; x++) {
+        if (*si > 0) {
+          color.apply(di);
+        }
+        si += 1;
+        di += 4;
+      }
+    }
+  });
+}
+
+void eye::draw_overlays(uint8_t* image, uint32_t oc) noexcept
+{
+  const auto range = tbb::blocked_range<size_t>(0, sh, 64);
+  const auto color = overlay_color(static_cast<uint32_t>(oc));
+  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
+    const size_t rb = range.begin();
+    const size_t re = range.end();
+    auto si = overlays_.data() + rb * sw;  // src iterator
+    auto di = image + rb * sw * 4;         // dst iterator
     for (auto y = rb; y < re; y++) {
       for (auto x = 0; x < sw; x++) {
         if (*si > 0) {

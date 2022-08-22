@@ -50,11 +50,11 @@ void process(const std::string& filename, bool gray = true)
     eye eye;
 
     const auto tp0 = std::chrono::high_resolution_clock::now();
-    const auto shoot = eye.scan(sd.data(), 2) > 4.0;
+    const auto shoot = eye.scan(sd.data());
 
     // Draw scan as overlay.
     const auto tp1 = std::chrono::high_resolution_clock::now();
-    eye.draw(sd.data(), 0x09BC2430, -1, 0x08DE29B0, -1);
+    eye.draw(sd.data(), 0x09BC2460, -1, 0x08DE29C0, -1);
     if (shoot) {
       eye::draw_reticle(sd.data(), 0xFFFFFFFF, 0x1478B7FF);
     }
@@ -65,7 +65,7 @@ void process(const std::string& filename, bool gray = true)
 
     // Draw filter as overlay.
     eye::desaturate(fd.data());
-    eye.draw(fd.data(), 0x09BC2450, 0xFFFFFFFF, -1, -1);
+    eye.draw(fd.data(), 0x09BC2460, 0xFFFFFFFF, -1, -1);
 
     // Convert filter and scan images to BGRA.
     cv::cvtColor(fi, fi, cv::COLOR_RGBA2BGRA);

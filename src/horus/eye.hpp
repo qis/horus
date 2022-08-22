@@ -47,7 +47,6 @@ public:
   /// @param os 32-bit RGBA color for outline strokes (negative to disable).
   /// @param ps 32-bit RGBA color for polygon strokes (negative to disable).
   /// @param cs 32-bit RGBA color for contour strokes (negative to disable).
-  /// @param es 32-bit RGBA color for ellipse strokes (negative to disable).
   ///
   void draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept;
 

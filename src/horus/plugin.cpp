@@ -12,7 +12,8 @@
 #include <memory>
 #include <vector>
 
-#include <windows.h>
+#include <Windows.h>
+#include <SDL.h>
 
 #define HORUS_LOGGER_LOG "C:/OBS/horus.log"
 #define HORUS_CONFIG_TXT "C:/OBS/horus.txt"
@@ -20,6 +21,7 @@
 #define HORUS_IMAGES_DIR "C:/OBS/img"
 #define HORUS_DRAW_SCANS 1
 #define HORUS_SHOW_STATS 1
+#define HORUS_PLAY_SOUND 1
 
 namespace horus {
 
@@ -76,6 +78,11 @@ public:
     }
 
     obs_leave_graphics();
+
+    SDL_LoadWAV(HORUS_EFFECT_DIR "/ping.wav", &audio_spec_, &audio_buffer_, &audio_length_);
+    if (audio_buffer_) {
+      audio_device_ = SDL_OpenAudioDevice(nullptr, 0, &audio_spec_, nullptr, 0);
+    }
   }
 
   plugin(plugin&& other) = delete;
@@ -85,6 +92,12 @@ public:
 
   ~plugin()
   {
+    if (audio_buffer_) {
+      if (audio_device_) {
+        SDL_CloseAudioDevice(audio_device_);
+      }
+      SDL_FreeWAV(audio_buffer_);
+    }
     if (draw_) {
       gs_effect_destroy(draw_);
     }
@@ -164,6 +177,12 @@ public:
           const auto xbutton = xbutton_state.load(std::memory_order_acquire);
           if (rbutton != xbutton) {
             // TODO: Inject left-click mouse event.
+#if HORUS_PLAY_SOUND
+            if (audio_device_) {
+              SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
+              SDL_PauseAudioDevice(audio_device_, 0);
+            }
+#endif
             injected = true;
           }
         }
@@ -175,6 +194,10 @@ public:
         bool screenshot_expected = true;
         if (screenshot_request.compare_exchange_strong(screenshot_expected, false)) {
           screenshot(data, screenshot_counter.fetch_add(1));
+          if (audio_device_) {
+            SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
+            SDL_PauseAudioDevice(audio_device_, 0);
+          }
         }
 
 #if HORUS_DRAW_SCANS
@@ -286,7 +309,7 @@ public:
     }
 
     // Update ready flag.
-    ready_ = now < blocked_;
+    ready_ = now > blocked_;
   }
 
   static void screenshot() noexcept
@@ -316,6 +339,7 @@ public:
 
   static void load() noexcept
   {
+    SDL_Init(SDL_INIT_AUDIO);
     if (auto is = std::ifstream(HORUS_CONFIG_TXT, std::ios::binary)) {
       size_t counter = 0;
       is >> counter;
@@ -330,6 +354,7 @@ public:
 
   static void unload() noexcept
   {
+    SDL_Quit();
     if (auto sp = screenshot_thread_pool) {
       sp->join();
       screenshot_thread_pool.reset();
@@ -370,6 +395,11 @@ private:
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::atomic_size_t screenshot_counter{ 0 };
   static inline std::shared_ptr<boost::asio::thread_pool> screenshot_thread_pool;
+
+  Uint32 audio_length_{ 0 };
+  Uint8* audio_buffer_{ nullptr };
+  SDL_AudioSpec audio_spec_{};
+  SDL_AudioDeviceID audio_device_{ 0 };
 
 #if HORUS_SHOW_STATS
   std::string stats_;

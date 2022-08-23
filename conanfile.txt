@@ -3,6 +3,7 @@ boost/[x]
 libpng/[x]
 opencv/[x]
 onetbb/[x]
+sdl/[x]
 
 [generators]
 deploy

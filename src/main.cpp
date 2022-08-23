@@ -56,7 +56,7 @@ void process(const std::string& filename, bool gray = true)
     const auto tp1 = std::chrono::high_resolution_clock::now();
     eye.draw(sd.data(), 0x09BC2460, -1, 0x08DE29C0, -1);
     if (shoot) {
-      eye::draw_reticle(sd.data(), 0xFFFFFFFF, 0x1478B7FF);
+      eye::draw_reticle(sd.data(), 0xFFFFFFFF, 0x00A5E7FF);
     }
 
     // Log scan and draw durations.

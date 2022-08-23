@@ -18,8 +18,8 @@
 #define HORUS_CONFIG_TXT "C:/OBS/horus.txt"
 #define HORUS_EFFECT_DIR "C:/OBS/horus/res"
 #define HORUS_IMAGES_DIR "C:/OBS/img"
-#define HORUS_SHOW_STATS 0
 #define HORUS_DRAW_SCANS 1
+#define HORUS_SHOW_STATS 1
 
 namespace horus {
 
@@ -27,10 +27,27 @@ class plugin {
 public:
   using clock = std::chrono::high_resolution_clock;
 
+  // Measured time between shots: 60 frames @ 75 fps
+  static constexpr std::chrono::milliseconds shot_duration{ 800 };
+
+  // Measured time between shot and error (9.0 - 32.0): 21 frames @ 75 fps
+  static constexpr std::chrono::milliseconds ammo_duration{ 280 };
+
+  // Measured time between 0 and 12: 104 frames @ 75 fps
+  static constexpr std::chrono::milliseconds reset_duration{ 1387 };
+
+  // Measured time between 0 and shot: 171 frames @ 75 fps
+  static constexpr std::chrono::milliseconds reload_duration{ 2280 };
+
+  // Time between injected clicks to simulate 8 clicks per second.
+  static constexpr std::chrono::milliseconds click_duration{ 125 };
+
+  // Expected frame duration at 75 fps.
+  static constexpr std::chrono::milliseconds expected_frame_duration{ 1000 / 75 };
+
   plugin(obs_source_t* context) noexcept : source_(context)
   {
     name_ = reinterpret_cast<std::uintptr_t>(this);
-    screenshot_.resize(eye::sw * eye::sh * 4 * 2);
 
     log("{:016X}: plugin created", name_);
 
@@ -48,14 +65,14 @@ public:
       return;
     }
 
-    texture_ = gs_texture_create(eye::sw, eye::sh, GS_RGBA_UNORM, 1, nullptr, GS_DYNAMIC);
-    if (!texture_) {
-      log("{:016X}: could not create texture", name_);
+    scan_ = gs_texture_create(eye::sw, eye::sh, GS_RGBA_UNORM, 1, nullptr, GS_DYNAMIC);
+    if (!scan_) {
+      log("{:016X}: could not create scan texture", name_);
     }
 
-    effect_ = gs_effect_create_from_file(HORUS_EFFECT_DIR "/horus.effect", nullptr);
-    if (!effect_) {
-      log("{:016X}: could not load effect: {}", name_, HORUS_EFFECT_DIR "/horus.effect");
+    draw_ = gs_effect_create_from_file(HORUS_EFFECT_DIR "/draw.effect", nullptr);
+    if (!draw_) {
+      log("{:016X}: could not load draw effect: {}", name_, HORUS_EFFECT_DIR "/draw.effect");
     }
 
     obs_leave_graphics();
@@ -68,11 +85,11 @@ public:
 
   ~plugin()
   {
-    if (effect_) {
-      gs_effect_destroy(effect_);
+    if (draw_) {
+      gs_effect_destroy(draw_);
     }
-    if (texture_) {
-      gs_texture_destroy(texture_);
+    if (scan_) {
+      gs_texture_destroy(scan_);
     }
     if (stagesurf_) {
       gs_stagesurface_destroy(stagesurf_);
@@ -88,6 +105,7 @@ public:
 #if HORUS_SHOW_STATS
     const auto tp0 = clock::now();
 #endif
+    clock::time_point tp1;
 
     const auto target = obs_filter_get_target(source_);
     if (!target) {
@@ -107,6 +125,9 @@ public:
     gs_blend_function(GS_BLEND_ONE, GS_BLEND_ZERO);
     gs_texrender_reset(texrender_);
     if (gs_texrender_begin(texrender_, eye::sw, eye::sh)) {
+      uint32_t line = 0;
+      uint8_t* data = nullptr;
+
       gs_projection_push();
       gs_ortho(
         float(eye::sx),
@@ -116,48 +137,84 @@ public:
         -100.0f,
         100.0f);
       obs_source_video_render(target);
+      gs_ortho(
+        float(eye::ax),
+        float(eye::ax + eye::aw),
+        float(eye::ay),
+        float(eye::ay + eye::ah),
+        -100.0f,
+        100.0f);
+      gs_set_viewport(0, 0, eye::aw, eye::ah);
+      obs_source_video_render(target);
       gs_projection_pop();
       gs_texrender_end(texrender_);
 
-      uint32_t line = 0;
-      uint8_t* data = nullptr;
       gs_stage_texture(stagesurf_, gs_texrender_get_texture(texrender_));
       if (gs_stagesurface_map(stagesurf_, &data, &line)) {
+        // Determine if a target is acquired.
         const auto shoot = eye_.scan(data);
 
+        // Measure the time it takes to decide if a target is acquired.
+        tp1 = clock::now();
+
+        // Inject left-click mouse event.
+        auto injected = false;
+        if (shoot && ready_) {
+          const auto rbutton = rbutton_state.load(std::memory_order_acquire);
+          const auto xbutton = xbutton_state.load(std::memory_order_acquire);
+          if (rbutton != xbutton) {
+            // TODO: Inject left-click mouse event.
+            injected = true;
+          }
+        }
+
+        // Update the ready_ value.
+        update(tp0, eye_.ammo(data), injected);
+
+        // Handle screenshot request.
         bool screenshot_expected = true;
         if (screenshot_request.compare_exchange_strong(screenshot_expected, false)) {
-          const auto index = screenshot_counter.fetch_add(1);
-          std::copy(data, data + eye::sw * eye::sh * 4, screenshot_.data());
-          std::copy(data, data + eye::sw * eye::sh * 4, screenshot_.data() + eye::sw * eye::sh * 4);
-          eye::desaturate(screenshot_.data());
-          eye_.draw(screenshot_.data(), 0x09BC2460, 0xFFFFFFFF, -1, -1);
-          eye_.draw(screenshot_.data() + eye::sw * eye::sh * 4, 0x09BC2460, -1, 0x08DE29C0, -1);
-          if (shoot) {
-            eye::draw_reticle(screenshot_.data() + eye::sw * eye::sh * 4, 0xFFFFFFFF, 0x1478B7FF);
-          }
-          screenshot(screenshot_.data(), index);
+          screenshot(data, screenshot_counter.fetch_add(1));
         }
 
 #if HORUS_DRAW_SCANS
+        overlay = true;
         eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
         if (shoot) {
-          eye::draw_reticle(data, 0xFFFFFFFF, 0x1478B7FF);
+          eye::draw_reticle(data, 0xFFFFFFFF, 0x00A5E7FF);
         }
-        gs_texture_set_image(texture_, data, eye::sw * 4, false);
-        overlay = true;
+#  if HORUS_SHOW_STATS
+        cv::Mat si(eye::sw, eye::sh, CV_8UC4, data, eye::sw * 4);
+        const auto tpos = cv::Point(10, eye::sh - 10);
+        auto blocked = 0.0;
+        if (tp1 < blocked_) {
+          using duration = std::chrono::duration<double>;
+          blocked = std::chrono::duration_cast<duration>(blocked_ - tp1).count();
+        }
+        stats_.clear();
+        std::format_to(
+          std::back_inserter(stats_),
+          "{:02d} fps | {:02.1f} ms | {:02d}/12 | {:1.3f} s",
+          static_cast<int>(frames_per_second_),
+          average_duration_,
+          ammo_,
+          blocked);
+        cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
+        cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
+#  endif
+        gs_texture_set_image(scan_, data, eye::sw * 4, false);
 #endif
         gs_stagesurface_unmap(stagesurf_);
       }
     }
     gs_blend_state_pop();
 
-    if (overlay && effect_) {
+    if (overlay && draw_) {
       if (obs_source_process_filter_begin(source_, GS_RGBA, OBS_ALLOW_DIRECT_RENDERING)) {
         gs_blend_state_push();
         gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
-        gs_effect_set_texture_srgb(gs_effect_get_param_by_name(effect_, "target"), texture_);
-        obs_source_process_filter_end(source_, effect_, 0, 0);
+        gs_effect_set_texture_srgb(gs_effect_get_param_by_name(draw_, "scan"), scan_);
+        obs_source_process_filter_end(source_, draw_, 0, 0);
         gs_blend_state_pop();
       }
     } else {
@@ -166,20 +223,95 @@ public:
 
 #if HORUS_SHOW_STATS
     frame_counter_++;
-    const auto tp1 = clock::now();
+    const auto tp2 = clock::now();
     processing_duration_ += tp1 - tp0;
-    if (frame_time_point_ + std::chrono::seconds(1) <= tp1) {
+    if (frame_time_point_ + std::chrono::milliseconds(100) <= tp1) {
       using duration = std::chrono::duration<float, std::milli>;
       const auto frames = static_cast<float>(frame_counter_);
-      const auto frames_duration = std::chrono::duration_cast<duration>(tp1 - frame_time_point_);
-      const auto processing_duration = std::chrono::duration_cast<duration>(processing_duration_);
-      const auto fps = frames / (frames_duration.count() / 1000.0f);
-      log("{:016X}: {:.1f} fps, {:.1f} ms", name_, fps, processing_duration.count() / frames);
+      const auto frames_duration = std::chrono::duration_cast<duration>(tp0 - frame_time_point_);
+      average_duration_ = std::chrono::duration_cast<duration>(processing_duration_).count() / frames;
+      frames_per_second_ = frames / (frames_duration.count() / 1000.0f);
       processing_duration_ = processing_duration_.zero();
-      frame_time_point_ = tp1;
+      frame_time_point_ = tp0;
       frame_counter_ = 0;
     }
 #endif
+  }
+
+  void update(clock::time_point now, const ammo& ammo, bool injected) noexcept
+  {
+    // If a mouse event was injected, block for at least 125ms (8 clicks per second).
+    if (injected) {
+      blocked_ = now + click_duration;
+    }
+
+    // Update ammo value.
+    if (ammo.error < 50) {
+      // Error is very low and very likely to be correct.
+      if (ammo_ == 1 && ammo.count == 0) {
+        // Value decreased from 1 to 0, block until reload is finished.
+        blocked_ = now + reload_duration;
+        if (ammo.error > 33) {
+          blocked_ -= click_duration;
+        }
+        ammo_ = ammo.count;
+      } else if (ammo_ == 0 && ammo.count >= 12) {
+        // Value increased from 0 to 12 or higher, block until reload is finished.
+        blocked_ = now + reload_duration - reset_duration;
+        if (ammo.error > 33) {
+          blocked_ -= click_duration;
+        }
+        ammo_ = ammo.count;
+      } else if (ammo_ == ammo.count + 1) {
+        // Value decreased by 1, block until the next round is ready.
+        blocked_ = now + shot_duration - click_duration;
+        ammo_ = ammo.count;
+      } else if (ammo_ != ammo.count) {
+        // Unexpected value change.
+        if (ammo.error < 33) {
+          // Error is low enough to assume an animation is in progress.
+          if (ammo.count == 0) {
+            // First part of the reload animation detected, block until it is likely to be finished.
+            blocked_ = now + reload_duration;
+          } else if (ammo.count >= 12) {
+            // Second part of the reload animation detected, block until it is likely to be finished.
+            blocked_ = now + reload_duration - reset_duration;
+          } else {
+            // Insert round animation detected, block until it is likely to be finished.
+            blocked_ = now + ammo_duration / 2;
+          }
+          ammo_ = ammo.count;
+        }
+      }
+    }
+
+    // Update ready flag.
+    ready_ = now < blocked_;
+  }
+
+  static void screenshot() noexcept
+  {
+    screenshot_request.store(true, std::memory_order_release);
+  }
+
+  static void screenshot(uint8_t* image, size_t counter) noexcept
+  {
+    std::unique_ptr<uint8_t[]> data(new uint8_t[eye::sw * eye::sh * 4]);
+    std::memcpy(data.get(), image, eye::sw * eye::sh * 4);
+    if (auto sp = screenshot_thread_pool) {
+      boost::asio::post(*sp, [data = std::move(data), counter]() noexcept {
+        try {
+          cv::Mat image(eye::sw, eye::sh, CV_8UC4, data.get(), eye::sw * 4);
+          cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
+          cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:09d}.png", counter), image);
+          //const auto ammo = image(cv::Rect(0, 0, eye::aw, eye::ah));
+          //cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:02d}.png", 12 - counter), ammo);
+        }
+        catch (const std::exception& e) {
+          log("could not save image: {}", counter);
+        }
+      });
+    }
   }
 
   static void load() noexcept
@@ -208,64 +340,45 @@ public:
     log("plugin unloaded");
   }
 
-  static void shoot(bool rbutton) noexcept
+  static void rbutton(bool down) noexcept
   {
-    if (rbutton) {
-      screenshot();
-    }
+    rbutton_state.store(down, std::memory_order_release);
   }
 
-  static void screenshot() noexcept
+  static void xbutton(bool down) noexcept
   {
-    screenshot_request.store(true, std::memory_order_release);
-  }
-
-  static void screenshot(uint8_t* image, size_t counter) noexcept
-  {
-    std::unique_ptr<uint8_t[]> data(new uint8_t[eye::sw * eye::sh * 4 * 2]);
-    std::memcpy(data.get(), image, eye::sw * eye::sh * 4 * 2);
-    if (auto sp = screenshot_thread_pool) {
-      boost::asio::post(*sp, [data = std::move(data), counter]() noexcept {
-        try {
-          cv::Mat image(cv::Size(eye::sw * 2, eye::sh), CV_8UC4);
-
-          cv::Mat fi(eye::sw, eye::sh, CV_8UC4, data.get(), eye::sw * 4);
-          fi.copyTo(image(cv::Rect(0, 0, eye::sw, eye::sh)));
-
-          cv::Mat si(eye::sw, eye::sh, CV_8UC4, data.get() + eye::sw * eye::sh * 4, eye::sw * 4);
-          si.copyTo(image(cv::Rect(eye::sw, 0, eye::sw, eye::sh)));
-
-          cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
-          cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:09d}.png", counter), image);
-        }
-        catch (const std::exception& e) {
-          log("could not save image: {}", counter);
-        }
-      });
-    }
+    xbutton_state.store(down, std::memory_order_release);
   }
 
 private:
   obs_source_t* source_;
   gs_texrender_t* texrender_{ nullptr };
   gs_stagesurf_t* stagesurf_{ nullptr };
-  gs_texture_t* texture_{ nullptr };
-  gs_effect_t* effect_{ nullptr };
+  gs_texture_t* scan_{ nullptr };
+  gs_effect_t* draw_{ nullptr };
 
   std::uintptr_t name_{ 0 };
   eye eye_;
 
-#if HORUS_SHOW_STATS
-  clock::time_point frame_time_point_{ clock::now() };
-  std::chrono::nanoseconds processing_duration_{ 0 };
-  std::size_t frame_counter_{ 0 };
-#endif
+  bool ready_ = true;
+  unsigned ammo_ = 0;
+  clock::time_point blocked_;
 
-  std::vector<uint8_t> screenshot_;
+  static inline std::atomic_bool rbutton_state = false;
+  static inline std::atomic_bool xbutton_state = false;
 
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::atomic_size_t screenshot_counter{ 0 };
   static inline std::shared_ptr<boost::asio::thread_pool> screenshot_thread_pool;
+
+#if HORUS_SHOW_STATS
+  std::string stats_;
+  clock::time_point frame_time_point_{ clock::now() };
+  std::chrono::nanoseconds processing_duration_{ 0 };
+  std::size_t frame_counter_{ 0 };
+  float frames_per_second_ = 0.0f;
+  float average_duration_ = 0.0f;
+#endif
 };
 
 }  // namespace horus
@@ -326,28 +439,36 @@ static obs_source_info source = {
 };
 
 static HHOOK hook = nullptr;
-static bool rbutton = false;
 
 static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
 {
-  static constexpr int size = 255;
-  static std::string text(static_cast<size_t>(size), '\0');
+  static constexpr auto size = 255;
+  static constexpr auto name = std::string_view("Overwatch");
+  static auto text = std::string(static_cast<size_t>(size), '\0');
+  if (const auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
+    if (std::string_view(text.data(), static_cast<std::size_t>(s)) != name) {
+      return CallNextHookEx(hook, code, wparam, lparam);
+    }
+  }
   switch (wparam) {
   case WM_RBUTTONUP:
-    rbutton = false;
+    horus::plugin::rbutton(false);
     break;
   case WM_RBUTTONDOWN:
-    rbutton = true;
+    horus::plugin::rbutton(true);
     break;
-  case WM_LBUTTONDOWN:
-    if (auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
-      if (std::string_view(text.data(), static_cast<std::size_t>(s)) == "Overwatch") {
-        horus::plugin::shoot(rbutton);
-      }
+  case WM_MBUTTONDOWN:
+    horus::plugin::screenshot();
+    break;
+  case WM_XBUTTONUP:
+    if (GET_XBUTTON_WPARAM(reinterpret_cast<PMSLLHOOKSTRUCT>(lparam)->mouseData) == XBUTTON2) {
+      horus::plugin::xbutton(false);
     }
     break;
   case WM_XBUTTONDOWN:
-    horus::plugin::screenshot();
+    if (GET_XBUTTON_WPARAM(reinterpret_cast<PMSLLHOOKSTRUCT>(lparam)->mouseData) == XBUTTON2) {
+      horus::plugin::xbutton(true);
+    }
     break;
   }
   return CallNextHookEx(hook, code, wparam, lparam);

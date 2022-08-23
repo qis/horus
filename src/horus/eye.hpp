@@ -2,10 +2,20 @@
 #include "config.hpp"
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
+#include <array>
+#include <chrono>
 #include <vector>
 #include <cstdint>
 
 namespace horus {
+
+struct ammo {
+  // Best match.
+  unsigned count = 0;
+
+  // Difference between scan and best match reference image.
+  unsigned error = -1.0;
+};
 
 class HORUS_API eye {
 public:
@@ -21,6 +31,12 @@ public:
   // Scan offset to display (vertical).
   static constexpr uint32_t sy = (dh - sh) / 2;
 
+  // Ammo offset and size.
+  static constexpr uint32_t ax = 2090;
+  static constexpr uint32_t ay = 889;
+  static constexpr uint32_t aw = 38;
+  static constexpr uint32_t ah = 38;
+
   // Overlay color (minimum red, maximum green, minimum blue).
   static constexpr uint32_t oc = 0xA060A0;
 
@@ -34,11 +50,18 @@ public:
   /// Searches for enemy outlines.
   ///
   /// @param image Unmodified image from Overwatch (sw x sh 4 byte rgba).
-  /// @param depth Makes sure that all outline pixels have `depth + 1` adjacent outline pixels.
   ///
   /// @return Returns true if the middle of the image is likely to be on a target.
   ///
   bool scan(const uint8_t* image) noexcept;
+
+  /// Tries to detect the current ammo count.
+  ///
+  /// @param image Unmodified image from Overwatch (sw x sh 4 byte rgba).
+  ///
+  /// @return Returns the best guess.
+  ///
+  ammo ammo(uint8_t* image) noexcept;
 
   /// Draws polygons, contours and filtered outlines from the last @ref scan call over the image.
   ///
@@ -81,6 +104,10 @@ private:
   std::vector<cv::Vec4i> hierarchy_;
   std::vector<std::vector<cv::Point>> contours_;
   std::vector<std::vector<cv::Point>> polygons_;
+
+  cv::Mat ammo_scan_;
+  std::array<cv::Mat, 13> ammo_scans_;
+  std::array<cv::Mat, 13> ammo_masks_;
 };
 
 }  // namespace horus

@@ -1,7 +1,12 @@
 #include "eye.hpp"
+#include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <tbb/parallel_for.h>
 #include <algorithm>
+#include <format>
+#include <cassert>
+
+#define HORUS_AMMO_DIR "C:/OBS/horus/res/ammo"
 
 namespace horus {
 namespace {
@@ -43,6 +48,15 @@ private:
   const float m_;
 };
 
+constexpr unsigned rgba2gray(uint8_t* di) noexcept
+{
+  const auto c = static_cast<uint8_t>(di[0] * 0.299f + di[1] * 0.587f + di[2] * 0.114f);
+  di[0] = c;
+  di[1] = c;
+  di[2] = c;
+  return 4;
+}
+
 }  // namespace
 
 eye::eye() :
@@ -57,6 +71,19 @@ eye::eye() :
   hierarchy_.reserve(1024);
   contours_.reserve(1024);
   polygons_.reserve(1024);
+
+  ammo_scan_ = cv::Mat(cv::Size(aw, ah), CV_8UC1);
+
+  for (size_t i = 0; i < ammo_scans_.size(); i++) {
+    ammo_scans_[i] = cv::Mat(cv::Size(aw, ah), CV_8UC1);
+    ammo_masks_[i] = cv::Mat(cv::Size(aw, ah), CV_8UC1);
+    auto scan = cv::imread(std::format(HORUS_AMMO_DIR "/{:02d}.png", i), cv::IMREAD_UNCHANGED);
+    assert(scan.cols == aw);
+    assert(scan.rows == ah);
+    assert(scan.channels() == 4);
+    cv::cvtColor(scan, ammo_scans_[i], cv::COLOR_BGRA2GRAY);
+    cv::threshold(ammo_scans_[i], ammo_masks_[i], 0x33, 0xFF, cv::THRESH_BINARY);
+  }
 }
 
 bool eye::scan(const uint8_t* image) noexcept
@@ -64,7 +91,7 @@ bool eye::scan(const uint8_t* image) noexcept
   // Prepare outlines and outlines buffer.
   std::memset(outlines_.data(), 0, sw * sh);
   std::memset(outlines_buffer_.data(), 0, sw * sh);
-  const auto range = tbb::blocked_range<size_t>(1, sh - 1, 64);
+  const auto range = tbb::blocked_range<size_t>(ah + 1, sh - 1, 64);
 
   // Get outlines.
   tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
@@ -192,6 +219,25 @@ bool eye::scan(const uint8_t* image) noexcept
   return false;
 }
 
+ammo eye::ammo(uint8_t* image) noexcept
+{
+  auto count = unsigned(0);
+  auto error = std::numeric_limits<double>::max();
+
+  auto src = cv::Mat(sw, sh, CV_8UC4, image, eye::sw * 4);
+  cv::cvtColor(src(cv::Rect(0, 0, aw, ah)), ammo_scan_, cv::COLOR_RGBA2GRAY);
+
+  for (uint8_t i = 0, max = static_cast<uint8_t>(ammo_scans_.size()); i < max; i++) {
+    constexpr auto type = cv::NORM_INF;
+    if (const auto e = cv::norm(ammo_scan_, ammo_scans_[i], type, ammo_masks_[i]); e < error) {
+      count = i;
+      error = e;
+    }
+  }
+
+  return { count, static_cast<unsigned>(error / aw * ah) };
+}
+
 void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept
 {
   // Fill polygons.
@@ -283,11 +329,8 @@ void eye::desaturate(uint8_t* image) noexcept
     auto di = image + rb * sw * 4;  // dst iterator
     for (auto y = rb; y < re; y++) {
       for (auto x = 0; x < sw; x++) {
-        const auto c = static_cast<uint8_t>(di[0] * 0.299f + di[1] * 0.587f + di[2] * 0.114f);
-        di[0] = c;
-        di[1] = c;
-        di[2] = c;
-        di += 4;
+        di += rgba2gray(di);
+        ;
       }
     }
   });

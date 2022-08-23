@@ -105,6 +105,11 @@ Options
       Dot Size: 6
       Dot Opacity: 100
       Scale with Resolution: Off
++ Gameplay
+  Waypoint Opacity: 30%
+  Respawn Icon Opacity: 30%
+  Ability Timer Ring Opacity: 30%
+  Player Outline Strength: 100%
 ```
 
 [obs]: https://github.com/obsproject/obs-studio/releases/tag/27.2.4

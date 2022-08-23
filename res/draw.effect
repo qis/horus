@@ -1,6 +1,6 @@
 uniform float4x4 ViewProj;
 uniform texture2d image;    // 2560x1080 RGBA background
-uniform texture2d target;   // 1024x1024 RGBA overlay
+uniform texture2d scan;     // 1024x1024 RGBA overlay
 
 sampler_state textureSampler {
   Filter   = Linear;
@@ -27,10 +27,10 @@ VertDataOut VSDefault(VertDataIn vi) {
   static const float sh = 1024.0;  // scan height
 
   // Scan offset to display (horizontal).
-  static const float sx = (dw - sw) / 2.0;
+  static const float sx = round((dw - sw) / 2.0);
 
   // Scan offset to display (vertical).
-  static const float sy = (dh - sh) / 2.0;
+  static const float sy = round((dh - sh) / 2.0);
 
   VertDataOut vo;
   vo.pos = mul(float4(vi.pos.xyz, 1.0), ViewProj);
@@ -47,7 +47,7 @@ VertDataOut VSDefault(VertDataIn vi) {
 
 float4 PSColorMaskRGBA(VertDataOut vi) : TARGET {
   float4 color = image.Sample(textureSampler, vi.uv);
-  float4 overlay = target.Sample(textureSampler, vi.uv2);
+  float4 overlay = scan.Sample(textureSampler, vi.uv2);
   if (overlay.a == 1.0) {
     color.rgb = overlay.rgb;
   }

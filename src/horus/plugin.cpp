@@ -308,8 +308,8 @@ public:
       }
     }
 
-    // Update ready flag.
-    ready_ = now > blocked_;
+    // Set ready flag if it's not blocked and the error is not too large.
+    ready_ = now > blocked_ && ammo.error < 150;
   }
 
   static void screenshot() noexcept

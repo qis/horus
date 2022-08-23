@@ -278,8 +278,8 @@ public:
           blocked_ -= click_duration;
         }
         ammo_ = ammo.count;
-      } else if (ammo_ == 0 && ammo.count >= 12) {
-        // Value increased from 0 to 12 or higher, block until reload is finished.
+      } else if (ammo_ < 12 && ammo.count == 12) {
+        // Value increased from to 12 or higher, block until reload is finished.
         blocked_ = now + reload_duration - reset_duration;
         if (ammo.error > 33) {
           blocked_ -= click_duration;
@@ -296,7 +296,7 @@ public:
           if (ammo.count == 0) {
             // First part of the reload animation detected, block until it is likely to be finished.
             blocked_ = now + reload_duration;
-          } else if (ammo.count >= 12) {
+          } else if (ammo.count == 12) {
             // Second part of the reload animation detected, block until it is likely to be finished.
             blocked_ = now + reload_duration - reset_duration;
           } else {

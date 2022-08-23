@@ -159,6 +159,15 @@ public:
         100.0f);
       gs_set_viewport(0, 0, eye::aw, eye::ah);
       obs_source_video_render(target);
+      gs_ortho(
+        float(eye::px),
+        float(eye::px + eye::pw),
+        float(eye::py),
+        float(eye::py + eye::ph),
+        -100.0f,
+        100.0f);
+      gs_set_viewport(eye::aw, 0, eye::pw, eye::ph);
+      obs_source_video_render(target);
       gs_projection_pop();
       gs_texrender_end(texrender_);
 
@@ -187,8 +196,13 @@ public:
           }
         }
 
+        // Handle fire state.
+        bool fire_expected = true;
+        const auto fire = fire_state.compare_exchange_strong(fire_expected, false);
+
         // Update the ready_ value.
-        update(tp0, eye_.ammo(data), injected);
+        const auto state = eye_.parse(data);
+        update(tp0, state, injected || fire);
 
         // Handle screenshot request.
         bool screenshot_expected = true;
@@ -217,11 +231,12 @@ public:
         stats_.clear();
         std::format_to(
           std::back_inserter(stats_),
-          "{:02d} fps | {:02.1f} ms | {:02d}/12 | {:1.3f} s",
+          "{:02d} fps | {:02.1f} ms | {:02d}/12 | {:1.3f} s | {:03d}",
           static_cast<int>(frames_per_second_),
           average_duration_,
           ammo_,
-          blocked);
+          blocked,
+          state.ana);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
 #  endif
@@ -261,55 +276,61 @@ public:
 #endif
   }
 
-  void update(clock::time_point now, const ammo& ammo, bool injected) noexcept
+  void update(clock::time_point now, const eye::state& state, bool fire) noexcept
   {
-    // If a mouse event was injected, block for at least 125ms (8 clicks per second).
-    if (injected) {
-      blocked_ = now + click_duration;
+    // Do not try to update the ammo value if the character is not ana.
+    if (state.ana > 1000) {
+      ready_ = false;
+      return;
     }
 
     // Update ammo value.
-    if (ammo.error < 50) {
+    if (state.ammo < 100) {
       // Error is very low and very likely to be correct.
-      if (ammo_ == 1 && ammo.count == 0) {
+      if (ammo_ == 1 && state.count == 0) {
         // Value decreased from 1 to 0, block until reload is finished.
         blocked_ = now + reload_duration;
-        if (ammo.error > 33) {
+        if (state.ammo > 33) {
           blocked_ -= click_duration;
         }
-        ammo_ = ammo.count;
-      } else if (ammo_ < 12 && ammo.count == 12) {
+        ammo_ = state.count;
+      } else if (ammo_ < 12 && state.count == 12) {
         // Value increased from to 12 or higher, block until reload is finished.
         blocked_ = now + reload_duration - reset_duration;
-        if (ammo.error > 33) {
+        if (state.ammo > 50) {
           blocked_ -= click_duration;
         }
-        ammo_ = ammo.count;
-      } else if (ammo_ == ammo.count + 1) {
+        ammo_ = state.count;
+      } else if (ammo_ == state.count + 1) {
         // Value decreased by 1, block until the next round is ready.
         blocked_ = now + shot_duration - click_duration;
-        ammo_ = ammo.count;
-      } else if (ammo_ != ammo.count) {
+        ammo_ = state.count;
+      } else if (ammo_ != state.count) {
         // Unexpected value change.
-        if (ammo.error < 33) {
+        if (state.ammo < 50) {
           // Error is low enough to assume an animation is in progress.
-          if (ammo.count == 0) {
+          if (state.count == 0) {
             // First part of the reload animation detected, block until it is likely to be finished.
             blocked_ = now + reload_duration;
-          } else if (ammo.count == 12) {
+          } else if (state.count == 12) {
             // Second part of the reload animation detected, block until it is likely to be finished.
             blocked_ = now + reload_duration - reset_duration;
           } else {
             // Insert round animation detected, block until it is likely to be finished.
             blocked_ = now + ammo_duration / 2;
           }
-          ammo_ = ammo.count;
+          ammo_ = state.count;
         }
       }
     }
 
+    // Limit click rate if a mouse event was injected, received or a shot was manually fired.
+    if (fire && blocked_ < now + click_duration) {
+      blocked_ = now + click_duration;
+    }
+
     // Set ready flag if it's not blocked and the error is not too large.
-    ready_ = now > blocked_ && ammo.error < 150;
+    ready_ = now > blocked_;
   }
 
   static void screenshot() noexcept
@@ -327,8 +348,12 @@ public:
           cv::Mat image(eye::sw, eye::sh, CV_8UC4, data.get(), eye::sw * 4);
           cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
           cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:09d}.png", counter), image);
+
           //const auto ammo = image(cv::Rect(0, 0, eye::aw, eye::ah));
           //cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:02d}.png", 12 - counter), ammo);
+
+          //const auto ana = image(cv::Rect(eye::aw, 0, eye::pw, eye::ph));
+          //cv::imwrite(HORUS_IMAGES_DIR "/ana.png", ana);
         }
         catch (const std::exception& e) {
           log("could not save image: {}", counter);
@@ -365,6 +390,11 @@ public:
     log("plugin unloaded");
   }
 
+  static void fire() noexcept
+  {
+    fire_state.store(true, std::memory_order_release);
+  }
+
   static void rbutton(bool down) noexcept
   {
     rbutton_state.store(down, std::memory_order_release);
@@ -389,6 +419,7 @@ private:
   unsigned ammo_ = 0;
   clock::time_point blocked_;
 
+  static inline std::atomic_bool fire_state = false;
   static inline std::atomic_bool rbutton_state = false;
   static inline std::atomic_bool xbutton_state = false;
 
@@ -481,6 +512,9 @@ static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
     }
   }
   switch (wparam) {
+  case WM_LBUTTONUP:
+    horus::plugin::fire();
+    break;
   case WM_RBUTTONUP:
     horus::plugin::rbutton(false);
     break;

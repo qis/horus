@@ -9,16 +9,19 @@
 
 namespace horus {
 
-struct ammo {
-  // Best match.
-  unsigned count = 0;
-
-  // Difference between scan and best match reference image.
-  unsigned error = -1.0;
-};
-
 class HORUS_API eye {
 public:
+  struct state {
+    // Error for the detected ana value.
+    unsigned ana;
+
+    // Error for the detected ammo value.
+    unsigned ammo;
+
+    // Detected ammo value.
+    unsigned count;
+  };
+
   // Display and scan sizes (must be synchronized with res/horus.effect).
   static constexpr uint32_t dw = 2560;  // display width
   static constexpr uint32_t dh = 1080;  // display height
@@ -26,16 +29,22 @@ public:
   static constexpr uint32_t sh = 1024;  // scan height
 
   // Scan offset to display (horizontal).
-  static constexpr uint32_t sx = (dw - sw) / 2;
+  static constexpr uint32_t sx = (dw - sw) / 2;  // 768
 
   // Scan offset to display (vertical).
-  static constexpr uint32_t sy = (dh - sh) / 2;
+  static constexpr uint32_t sy = (dh - sh) / 2;  // 28
 
   // Ammo offset and size.
-  static constexpr uint32_t ax = 2090;
+  static constexpr uint32_t ax = 320 + 1770;
   static constexpr uint32_t ay = 889;
   static constexpr uint32_t aw = 38;
   static constexpr uint32_t ah = 38;
+
+  // Portrait offset and size.
+  static constexpr uint32_t px = 320 + 162;
+  static constexpr uint32_t py = 919;
+  static constexpr uint32_t pw = 38;
+  static constexpr uint32_t ph = 38;
 
   // Overlay color (minimum red, maximum green, minimum blue).
   static constexpr uint32_t oc = 0xA060A0;
@@ -55,13 +64,13 @@ public:
   ///
   bool scan(const uint8_t* image) noexcept;
 
-  /// Tries to detect the current ammo count.
+  /// Tries to parse the current UI state.
   ///
   /// @param image Unmodified image from Overwatch (sw x sh 4 byte rgba).
   ///
   /// @return Returns the best guess.
   ///
-  ammo ammo(uint8_t* image) noexcept;
+  state parse(uint8_t* image) noexcept;
 
   /// Draws polygons, contours and filtered outlines from the last @ref scan call over the image.
   ///
@@ -108,6 +117,9 @@ private:
   cv::Mat ammo_scan_;
   std::array<cv::Mat, 13> ammo_scans_;
   std::array<cv::Mat, 13> ammo_masks_;
+
+  cv::Mat portrait_scan_;
+  std::vector<cv::Mat> portrait_scans_;
 };
 
 }  // namespace horus

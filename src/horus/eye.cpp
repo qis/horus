@@ -3,10 +3,11 @@
 #include <opencv2/imgproc.hpp>
 #include <tbb/parallel_for.h>
 #include <algorithm>
+#include <filesystem>
 #include <format>
 #include <cassert>
 
-#define HORUS_AMMO_DIR "C:/OBS/horus/res/ammo"
+#define HORUS_DATA_DIR "C:/OBS/horus/res"
 
 namespace horus {
 namespace {
@@ -77,12 +78,30 @@ eye::eye() :
   for (size_t i = 0; i < ammo_scans_.size(); i++) {
     ammo_scans_[i] = cv::Mat(cv::Size(aw, ah), CV_8UC1);
     ammo_masks_[i] = cv::Mat(cv::Size(aw, ah), CV_8UC1);
-    auto scan = cv::imread(std::format(HORUS_AMMO_DIR "/{:02d}.png", i), cv::IMREAD_UNCHANGED);
+    auto scan = cv::imread(std::format(HORUS_DATA_DIR "/ammo/{:02d}.png", i), cv::IMREAD_UNCHANGED);
     assert(scan.cols == aw);
     assert(scan.rows == ah);
     assert(scan.channels() == 4);
     cv::cvtColor(scan, ammo_scans_[i], cv::COLOR_BGRA2GRAY);
     cv::threshold(ammo_scans_[i], ammo_masks_[i], 0x33, 0xFF, cv::THRESH_BINARY);
+  }
+
+  portrait_scan_ = cv::Mat(cv::Size(pw, ph), CV_8UC1);
+
+  const std::filesystem::directory_iterator end;
+  for (auto it = std::filesystem::directory_iterator(HORUS_DATA_DIR "/portraits"); it != end; ++it) {
+    if (!std::filesystem::is_regular_file(it->path())) {
+      continue;
+    }
+    if (it->path().extension() != ".png" || it->path().filename().string().ends_with("L.png")) {
+      continue;
+    }
+    auto scan = cv::imread(it->path().string(), cv::IMREAD_UNCHANGED);
+    assert(scan.cols == pw);
+    assert(scan.rows == ph);
+    assert(scan.channels() == 4);
+    cv::cvtColor(scan, portrait_scan_, cv::COLOR_BGRA2GRAY);
+    portrait_scans_.emplace_back(portrait_scan_.clone());
   }
 }
 
@@ -219,23 +238,30 @@ bool eye::scan(const uint8_t* image) noexcept
   return false;
 }
 
-ammo eye::ammo(uint8_t* image) noexcept
+eye::state eye::parse(uint8_t* image) noexcept
 {
+  constexpr auto norm_type = cv::NORM_INF;
+
+  auto ana = std::numeric_limits<double>::max();
+  auto ammo = std::numeric_limits<double>::max();
   auto count = unsigned(0);
-  auto error = std::numeric_limits<double>::max();
 
   auto src = cv::Mat(sw, sh, CV_8UC4, image, eye::sw * 4);
   cv::cvtColor(src(cv::Rect(0, 0, aw, ah)), ammo_scan_, cv::COLOR_RGBA2GRAY);
 
   for (uint8_t i = 0, max = static_cast<uint8_t>(ammo_scans_.size()); i < max; i++) {
-    constexpr auto type = cv::NORM_INF;
-    if (const auto e = cv::norm(ammo_scan_, ammo_scans_[i], type, ammo_masks_[i]); e < error) {
+    if (const auto a = cv::norm(ammo_scan_, ammo_scans_[i], norm_type, ammo_masks_[i]); a < ammo) {
+      ammo = a;
       count = i;
-      error = e;
     }
   }
 
-  return { count, static_cast<unsigned>(error / aw * ah) };
+  cv::cvtColor(src(cv::Rect(aw, 0, pw, ph)), portrait_scan_, cv::COLOR_RGBA2GRAY);
+  for (const auto& e : portrait_scans_) {
+    ana = std::min(ana, cv::norm(portrait_scan_, e));
+  }
+
+  return { static_cast<unsigned>(ana / aw * ah), static_cast<unsigned>(ammo / aw * ah), count };
 }
 
 void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept

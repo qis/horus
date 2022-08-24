@@ -62,7 +62,7 @@ public:
   ///
   /// @return Returns true if the middle of the image is likely to be on a target.
   ///
-  bool scan(const uint8_t* image) noexcept;
+  bool scan(const uint8_t* image, long x, long y) noexcept;
 
   /// Tries to parse the current UI state.
   ///
@@ -113,6 +113,7 @@ private:
   std::vector<cv::Vec4i> hierarchy_;
   std::vector<std::vector<cv::Point>> contours_;
   std::vector<std::vector<cv::Point>> polygons_;
+  std::vector<std::vector<cv::Point>> prediction_;
 
   cv::Mat ammo_scan_;
   std::array<cv::Mat, 13> ammo_scans_;

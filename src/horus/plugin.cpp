@@ -10,9 +10,16 @@
 #include <exception>
 #include <fstream>
 #include <memory>
+#include <random>
 #include <vector>
 
 #include <Windows.h>
+#include <dinput.h>
+#include <dinputd.h>
+
+#pragma comment(lib, "dinput8.lib")
+#pragma comment(lib, "dxguid.lib")
+
 #include <SDL.h>
 
 #define HORUS_LOGGER_LOG "C:/OBS/horus.log"
@@ -22,6 +29,12 @@
 #define HORUS_DRAW_SCANS 1
 #define HORUS_SHOW_STATS 1
 #define HORUS_PLAY_SOUND 1
+
+#define HORUS_BUTTON_LEFT 0
+#define HORUS_BUTTON_RIGHT 1
+#define HORUS_BUTTON_MIDDLE 2
+#define HORUS_BUTTON_DOWN 3
+#define HORUS_BUTTON_UP 4
 
 namespace horus {
 
@@ -47,7 +60,7 @@ public:
   // Expected frame duration at 75 fps.
   static constexpr std::chrono::milliseconds expected_frame_duration{ 1000 / 75 };
 
-  plugin(obs_source_t* context) noexcept : source_(context)
+  plugin(obs_source_t* context) noexcept : source_(context), random_distribution_(-1000000, 6000000)
   {
     name_ = reinterpret_cast<std::uintptr_t>(this);
 
@@ -83,6 +96,64 @@ public:
     if (audio_buffer_) {
       audio_device_ = SDL_OpenAudioDevice(nullptr, 0, &audio_spec_, nullptr, 0);
     }
+
+    struct enum_windows_data {
+      DWORD pid = GetCurrentProcessId();
+      HWND hwnd = nullptr;
+    } ewd;
+
+    EnumWindows(
+      [](HWND hwnd, LPARAM lparam) -> BOOL {
+        const auto ewd = reinterpret_cast<enum_windows_data*>(lparam);
+        DWORD pid = 0;
+        GetWindowThreadProcessId(hwnd, &pid);
+        if (pid == ewd->pid) {
+          ewd->hwnd = hwnd;
+          return FALSE;
+        }
+        return TRUE;
+      },
+      reinterpret_cast<LPARAM>(&ewd));
+
+    if (ewd.hwnd) {
+      auto hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+      if (SUCCEEDED(hr)) {
+        hr = DirectInput8Create(
+          GetModuleHandle(nullptr),
+          DIRECTINPUT_VERSION,
+          IID_IDirectInput8,
+          reinterpret_cast<LPVOID*>(&input_),
+          nullptr);
+        if (SUCCEEDED(hr)) {
+          hr = input_->CreateDevice(GUID_SysMouse, &mouse_, nullptr);
+          if (SUCCEEDED(hr)) {
+            hr = mouse_->SetDataFormat(&c_dfDIMouse2);
+            if (FAILED(hr)) {
+              log("could not set mouse data format");
+            }
+            hr = mouse_->SetCooperativeLevel(ewd.hwnd, DISCL_BACKGROUND | DISCL_NONEXCLUSIVE);
+            if (FAILED(hr)) {
+              log("could not set mouse cooperative level");
+            }
+            hr = mouse_->Acquire();
+            if (FAILED(hr)) {
+              log("could not acquire mouse");
+            }
+          } else {
+            log("could not create mouse device");
+            mouse_ = nullptr;
+            input_->Release();
+          }
+        } else {
+          log("could not initialize direct input");
+          input_ = nullptr;
+        }
+      } else {
+        log("could not initialize com library");
+      }
+    } else {
+      log("could not find current process window handle");
+    }
   }
 
   plugin(plugin&& other) = delete;
@@ -92,6 +163,13 @@ public:
 
   ~plugin()
   {
+    if (mouse_) {
+      mouse_->Unacquire();
+      mouse_->Release();
+    }
+    if (input_) {
+      input_->Release();
+    }
     if (audio_buffer_) {
       if (audio_device_) {
         SDL_CloseAudioDevice(audio_device_);
@@ -173,27 +251,36 @@ public:
 
       gs_stage_texture(stagesurf_, gs_texrender_get_texture(texrender_));
       if (gs_stagesurface_map(stagesurf_, &data, &line)) {
+        // Get relative mouse travel distance since last call.
+        long mx = 0;
+        long my = 0;
+        bool br = false;
+        bool bu = false;
+        const auto hr = mouse_->GetDeviceState(sizeof(mouse_state_), &mouse_state_);
+        if (SUCCEEDED(hr)) {
+          mx = mouse_state_.lX;
+          my = mouse_state_.lY;
+          br = mouse_state_.rgbButtons[HORUS_BUTTON_RIGHT] ? true : false;
+          bu = mouse_state_.rgbButtons[HORUS_BUTTON_UP] ? true : false;
+        }
+
         // Determine if a target is acquired.
-        const auto shoot = eye_.scan(data);
+        const auto shoot = eye_.scan(data, mx, my);
 
         // Measure the time it takes to decide if a target is acquired.
         tp1 = clock::now();
 
         // Inject left-click mouse event.
         auto injected = false;
-        if (shoot && ready_) {
-          const auto rbutton = rbutton_state.load(std::memory_order_acquire);
-          const auto xbutton = xbutton_state.load(std::memory_order_acquire);
-          if (rbutton != xbutton) {
+        if (shoot && ready_ && br != bu) {
             // TODO: Inject left-click mouse event.
 #if HORUS_PLAY_SOUND
-            if (audio_device_) {
-              SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
-              SDL_PauseAudioDevice(audio_device_, 0);
-            }
-#endif
-            injected = true;
+          if (audio_device_) {
+            SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
+            SDL_PauseAudioDevice(audio_device_, 0);
           }
+#endif
+          injected = true;
         }
 
         // Handle fire state.
@@ -214,6 +301,12 @@ public:
           }
         }
 
+        // Re-acquire mouse device when lost.
+        if (FAILED(hr)) {
+          mouse_->Acquire();
+        }
+
+
 #if HORUS_DRAW_SCANS
         overlay = true;
         eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
@@ -231,12 +324,16 @@ public:
         stats_.clear();
         std::format_to(
           std::back_inserter(stats_),
-          "{:02d} fps | {:02.1f} ms | {:02d}/12 | {:1.3f} s | {:03d}",
+          "{:02d} fps | {:02.1f} ms | {:02d}/12 | {:1.2f} s | L:{} R:{} M:{} U:{} D:{}",
           static_cast<int>(frames_per_second_),
           average_duration_,
           ammo_,
           blocked,
-          state.ana);
+          static_cast<int>(mouse_state_.rgbButtons[HORUS_BUTTON_LEFT]),
+          static_cast<int>(mouse_state_.rgbButtons[HORUS_BUTTON_RIGHT]),
+          static_cast<int>(mouse_state_.rgbButtons[HORUS_BUTTON_MIDDLE]),
+          static_cast<int>(mouse_state_.rgbButtons[HORUS_BUTTON_UP]),
+          static_cast<int>(mouse_state_.rgbButtons[HORUS_BUTTON_DOWN]));
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
 #  endif
@@ -329,6 +426,11 @@ public:
       blocked_ = now + click_duration;
     }
 
+    // Change the blocked time point randomly to prevent heuristics.
+    if (now < blocked_) {
+      blocked_ += std::chrono::nanoseconds(random_distribution_(random_device_));
+    }
+
     // Set ready flag if it's not blocked and the error is not too large.
     ready_ = now > blocked_;
   }
@@ -395,16 +497,6 @@ public:
     fire_state.store(true, std::memory_order_release);
   }
 
-  static void rbutton(bool down) noexcept
-  {
-    rbutton_state.store(down, std::memory_order_release);
-  }
-
-  static void xbutton(bool down) noexcept
-  {
-    xbutton_state.store(down, std::memory_order_release);
-  }
-
 private:
   obs_source_t* source_;
   gs_texrender_t* texrender_{ nullptr };
@@ -418,10 +510,14 @@ private:
   bool ready_ = true;
   unsigned ammo_ = 0;
   clock::time_point blocked_;
+  std::random_device random_device_;
+  std::uniform_int_distribution<long long> random_distribution_;
 
-  static inline std::atomic_bool fire_state = false;
-  static inline std::atomic_bool rbutton_state = false;
-  static inline std::atomic_bool xbutton_state = false;
+  LPDIRECTINPUT8 input_{ nullptr };
+  LPDIRECTINPUTDEVICE8 mouse_{ nullptr };
+  DIMOUSESTATE2 mouse_state_{};
+
+  static inline std::atomic_bool fire_state{ false };
 
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::atomic_size_t screenshot_counter{ 0 };
@@ -506,35 +602,26 @@ static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
   static constexpr auto size = 255;
   static constexpr auto name = std::string_view("Overwatch");
   static auto text = std::string(static_cast<size_t>(size), '\0');
+
+  if (wparam == WM_MOUSEMOVE) {
+    return CallNextHookEx(hook, code, wparam, lparam);
+  }
+
   if (const auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
     if (std::string_view(text.data(), static_cast<std::size_t>(s)) != name) {
       return CallNextHookEx(hook, code, wparam, lparam);
     }
   }
+
   switch (wparam) {
   case WM_LBUTTONUP:
     horus::plugin::fire();
     break;
-  case WM_RBUTTONUP:
-    horus::plugin::rbutton(false);
-    break;
-  case WM_RBUTTONDOWN:
-    horus::plugin::rbutton(true);
-    break;
   case WM_MBUTTONDOWN:
     horus::plugin::screenshot();
     break;
-  case WM_XBUTTONUP:
-    if (GET_XBUTTON_WPARAM(reinterpret_cast<PMSLLHOOKSTRUCT>(lparam)->mouseData) == XBUTTON2) {
-      horus::plugin::xbutton(false);
-    }
-    break;
-  case WM_XBUTTONDOWN:
-    if (GET_XBUTTON_WPARAM(reinterpret_cast<PMSLLHOOKSTRUCT>(lparam)->mouseData) == XBUTTON2) {
-      horus::plugin::xbutton(true);
-    }
-    break;
   }
+
   return CallNextHookEx(hook, code, wparam, lparam);
 }
 

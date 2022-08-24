@@ -105,7 +105,7 @@ eye::eye() :
   }
 }
 
-bool eye::scan(const uint8_t* image) noexcept
+bool eye::scan(const uint8_t* image, long x, long y) noexcept
 {
   // Prepare outlines and outlines buffer.
   std::memset(outlines_.data(), 0, sw * sh);

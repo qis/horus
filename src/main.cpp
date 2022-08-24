@@ -50,7 +50,7 @@ void process(const std::string& filename, bool gray = true)
     eye eye;
 
     const auto tp0 = std::chrono::high_resolution_clock::now();
-    const auto shoot = eye.scan(sd.data());
+    const auto shoot = eye.scan(sd.data(), 0, 0);
 
     // Draw scan as overlay.
     const auto tp1 = std::chrono::high_resolution_clock::now();

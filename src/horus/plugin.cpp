@@ -57,10 +57,15 @@ public:
   // Time between injected clicks to simulate 8 clicks per second.
   static constexpr std::chrono::milliseconds click_duration{ 125 };
 
-  // Expected frame duration at 75 fps.
-  static constexpr std::chrono::milliseconds expected_frame_duration{ 1000 / 75 };
+  // Random value added to time between injected clicks.
+  static constexpr std::chrono::milliseconds random_min{ -1 };
+  static constexpr std::chrono::milliseconds random_max{ 3 };
 
-  plugin(obs_source_t* context) noexcept : source_(context), random_distribution_(-1000000, 6000000)
+  plugin(obs_source_t* context) noexcept :
+    source_(context),
+    random_distribution_(
+      std::chrono::duration_cast<clock::duration>(random_min).count(),
+      std::chrono::duration_cast<clock::duration>(random_max).count())
   {
     name_ = reinterpret_cast<std::uintptr_t>(this);
 
@@ -304,7 +309,6 @@ public:
           mouse_->Acquire();
         }
 
-
 #if HORUS_DRAW_SCANS
         overlay = true;
         eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
@@ -414,18 +418,16 @@ public:
       }
     }
 
-    // Limit click rate if a mouse event was injected, received or a shot was manually fired.
-    if (fire && blocked_ < now + click_duration) {
-      blocked_ = now + click_duration;
+    // Update ready flag.
+    if (blocked_ < now) {
+      // Limit click rate if a mouse event was injected, received or a shot was manually fired.
+      if (fire) {
+        blocked_ = now + click_duration + clock::duration(random_distribution_(random_device_));
+      }
+      ready_ = !fire;
+    } else {
+      ready_ = false;
     }
-
-    // Change the blocked time point randomly to prevent heuristics.
-    if (now < blocked_) {
-      blocked_ += std::chrono::nanoseconds(random_distribution_(random_device_));
-    }
-
-    // Set ready flag if it's not blocked and the error is not too large.
-    ready_ = now > blocked_;
   }
 
   static void screenshot() noexcept

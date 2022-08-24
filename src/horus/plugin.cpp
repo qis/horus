@@ -311,7 +311,7 @@ public:
 
 #if HORUS_DRAW_SCANS
         overlay = true;
-        eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, 0x08DE29C0);
+        eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
         if (shoot) {
           eye::draw_reticle(data, 0xFFFFFFFF, 0x00A5E7FF);
         }

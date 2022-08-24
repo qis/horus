@@ -220,38 +220,6 @@ bool eye::scan(const uint8_t* image, int mx, int my) noexcept
   const auto center = cv::Point2f(sw / 2.0f, sh / 2.0f);
 
   // Create polygons and check if the center of the image is targeting an enemy.
-#if HORUS_DEBUG
-  auto hit = false;
-  polygons_.resize(contours_.size());
-  for (size_t i = 0, size = contours_.size(); i < size; i++) {
-    cv::convexHull(cv::Mat(contours_[i]), polygons_[i]);
-    if (!hit) {
-      if (auto distance = cv::pointPolygonTest(polygons_[i], center, true); distance > 2.0) {
-        const auto rect = cv::boundingRect(polygons_[i]);
-        const auto x = sw / 2;
-        const auto l = rect.x + rect.width / 8;
-        const auto r = rect.x + rect.width - rect.width / 8;
-        hit = l < x && x < r;
-      }
-    }
-    if (mx != 0 || my != 0) {
-      for (auto& e : polygons_[i]) {
-        e.x -= mx;
-        e.y -= my;
-      }
-      if (!hit) {
-        if (auto distance = cv::pointPolygonTest(polygons_[i], center, true); distance > 2.0) {
-          const auto rect = cv::boundingRect(polygons_[i]);
-          const auto x = sw / 2;
-          const auto l = rect.x + rect.width / 8;
-          const auto r = rect.x + rect.width - rect.width / 8;
-          hit = l < x && x < r;
-        }
-      }
-    }
-  }
-  return hit;
-#else
   polygons_.resize(1);
   for (size_t i = 0, size = contours_.size(); i < size; i++) {
     cv::convexHull(cv::Mat(contours_[i]), polygons_[0]);
@@ -282,7 +250,6 @@ bool eye::scan(const uint8_t* image, int mx, int my) noexcept
   }
   polygons_.clear();
   return false;
-#endif
 }
 
 eye::state eye::parse(uint8_t* image) noexcept
@@ -313,6 +280,14 @@ eye::state eye::parse(uint8_t* image) noexcept
 
 void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept
 {
+  // Restore polygons, that were skipped by the scan function.
+  if (contours_.size()) {
+    polygons_.resize(contours_.size());
+    for (size_t i = 0, size = contours_.size(); i < size; i++) {
+      cv::convexHull(cv::Mat(contours_[i]), polygons_[i]);
+    }
+  }
+
   // Fill polygons.
   if (pf >= 0 && polygons_.size()) {
     std::memset(overlays_.data(), 0, sw * sh);

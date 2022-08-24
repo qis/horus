@@ -220,6 +220,7 @@ bool eye::scan(const uint8_t* image, int mx, int my) noexcept
   const auto center = cv::Point2f(sw / 2.0f, sh / 2.0f);
 
   // Create polygons and check if the center of the image is targeting an enemy.
+#if HORUS_DEBUG
   auto hit = false;
   polygons_.resize(contours_.size());
   for (size_t i = 0, size = contours_.size(); i < size; i++) {
@@ -250,6 +251,38 @@ bool eye::scan(const uint8_t* image, int mx, int my) noexcept
     }
   }
   return hit;
+#else
+  polygons_.resize(1);
+  for (size_t i = 0, size = contours_.size(); i < size; i++) {
+    cv::convexHull(cv::Mat(contours_[i]), polygons_[0]);
+    if (auto distance = cv::pointPolygonTest(polygons_[0], center, true); distance > 2.0) {
+      const auto rect = cv::boundingRect(polygons_[0]);
+      const auto x = sw / 2;
+      const auto l = rect.x + rect.width / 8;
+      const auto r = rect.x + rect.width - rect.width / 8;
+      if (l < x && x < r) {
+        return true;
+      }
+    }
+    if (mx != 0 || my != 0) {
+      for (auto& e : polygons_[0]) {
+        e.x -= mx;
+        e.y -= my;
+      }
+      if (auto distance = cv::pointPolygonTest(polygons_[0], center, true); distance > 2.0) {
+        const auto rect = cv::boundingRect(polygons_[0]);
+        const auto x = sw / 2;
+        const auto l = rect.x + rect.width / 8;
+        const auto r = rect.x + rect.width - rect.width / 8;
+        if (l < x && x < r) {
+          return true;
+        }
+      }
+    }
+  }
+  polygons_.clear();
+  return false;
+#endif
 }
 
 eye::state eye::parse(uint8_t* image) noexcept

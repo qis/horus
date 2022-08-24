@@ -21,6 +21,7 @@ target_compile_definitions(horus PRIVATE HORUS_EXPORTS)
 target_include_directories(horus PUBLIC src)
 
 target_compile_features(horus PUBLIC cxx_std_20)
+target_compile_definitions(horus PUBLIC HORUS_DEBUG=$<IF:$<CONFIG:Release>,0,1>)
 target_compile_definitions(horus PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_definitions(horus PUBLIC WINVER=0x0A00 _WIN32_WINNT=0x0A00)
 target_compile_definitions(horus PUBLIC DIRECTINPUT_VERSION=0x0800)

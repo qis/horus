@@ -59,10 +59,12 @@ public:
   /// Searches for enemy outlines.
   ///
   /// @param image Unmodified image from Overwatch (sw x sh 4 byte rgba).
+  /// @param mx DirectInput mouse movement relative to the last frame (horizontal).
+  /// @param my DirectInput mouse movement relative to the last frame (vertical).
   ///
   /// @return Returns true if the middle of the image is likely to be on a target.
   ///
-  bool scan(const uint8_t* image, long x, long y) noexcept;
+  bool scan(const uint8_t* image, int mx = 0, int my = 0) noexcept;
 
   /// Tries to parse the current UI state.
   ///
@@ -79,6 +81,7 @@ public:
   /// @param os 32-bit RGBA color for outline strokes (negative to disable).
   /// @param ps 32-bit RGBA color for polygon strokes (negative to disable).
   /// @param cs 32-bit RGBA color for contour strokes (negative to disable).
+  /// @param ms 32-bit RGBA color for movement strokes (negative to disable).
   ///
   void draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept;
 
@@ -113,7 +116,6 @@ private:
   std::vector<cv::Vec4i> hierarchy_;
   std::vector<std::vector<cv::Point>> contours_;
   std::vector<std::vector<cv::Point>> polygons_;
-  std::vector<std::vector<cv::Point>> prediction_;
 
   cv::Mat ammo_scan_;
   std::array<cv::Mat, 13> ammo_scans_;

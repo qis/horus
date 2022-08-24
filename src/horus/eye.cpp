@@ -105,7 +105,7 @@ eye::eye() :
   }
 }
 
-bool eye::scan(const uint8_t* image, long x, long y) noexcept
+bool eye::scan(const uint8_t* image, int mx, int my) noexcept
 {
   // Prepare outlines and outlines buffer.
   std::memset(outlines_.data(), 0, sw * sh);
@@ -216,26 +216,40 @@ bool eye::scan(const uint8_t* image, long x, long y) noexcept
   // Find countours.
   cv::findContours(outlines_image_, contours_, hierarchy_, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
-  // Create polygons.
+  // Get the center of the image.
+  const auto center = cv::Point2f(sw / 2.0f, sh / 2.0f);
+
+  // Create polygons and check if the center of the image is targeting an enemy.
+  auto hit = false;
   polygons_.resize(contours_.size());
   for (size_t i = 0, size = contours_.size(); i < size; i++) {
     cv::convexHull(cv::Mat(contours_[i]), polygons_[i]);
-  }
-
-  // Check if the center of the image is targeting an enemy.
-  const auto center = cv::Point2f(sw / 2.0f, sh / 2.0f);
-  for (size_t i = 0, size = polygons_.size(); i < size; i++) {
-    if (auto distance = cv::pointPolygonTest(polygons_[i], center, true); distance > 2.0) {
-      const auto rect = cv::boundingRect(polygons_[i]);
-      const auto x = sw / 2;
-      const auto l = rect.x + rect.width / 5;
-      const auto r = rect.x + rect.width - rect.width / 5;
-      if (l < x && x < r) {
-        return true;
+    if (!hit) {
+      if (auto distance = cv::pointPolygonTest(polygons_[i], center, true); distance > 2.0) {
+        const auto rect = cv::boundingRect(polygons_[i]);
+        const auto x = sw / 2;
+        const auto l = rect.x + rect.width / 8;
+        const auto r = rect.x + rect.width - rect.width / 8;
+        hit = l < x && x < r;
+      }
+    }
+    if (mx != 0 || my != 0) {
+      for (auto& e : polygons_[i]) {
+        e.x -= mx;
+        e.y -= my;
+      }
+      if (!hit) {
+        if (auto distance = cv::pointPolygonTest(polygons_[i], center, true); distance > 2.0) {
+          const auto rect = cv::boundingRect(polygons_[i]);
+          const auto x = sw / 2;
+          const auto l = rect.x + rect.width / 8;
+          const auto r = rect.x + rect.width - rect.width / 8;
+          hit = l < x && x < r;
+        }
       }
     }
   }
-  return false;
+  return hit;
 }
 
 eye::state eye::parse(uint8_t* image) noexcept

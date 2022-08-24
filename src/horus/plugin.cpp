@@ -254,14 +254,16 @@ public:
         // Get relative mouse travel distance since last call.
         long mx = 0;
         long my = 0;
+        bool bl = false;
         bool br = false;
         bool bu = false;
         const auto hr = mouse_->GetDeviceState(sizeof(mouse_state_), &mouse_state_);
         if (SUCCEEDED(hr)) {
           mx = mouse_state_.lX;
           my = mouse_state_.lY;
-          br = mouse_state_.rgbButtons[HORUS_BUTTON_RIGHT] ? true : false;
-          bu = mouse_state_.rgbButtons[HORUS_BUTTON_UP] ? true : false;
+          bl = mouse_state_.rgbButtons[HORUS_BUTTON_LEFT] != 0;
+          br = mouse_state_.rgbButtons[HORUS_BUTTON_RIGHT] != 0;
+          bu = mouse_state_.rgbButtons[HORUS_BUTTON_UP] != 0;
         }
 
         // Determine if a target is acquired.
@@ -272,8 +274,8 @@ public:
 
         // Inject left-click mouse event.
         auto injected = false;
-        if (shoot && ready_ && br != bu) {
-            // TODO: Inject left-click mouse event.
+        if (shoot && ready_ && !bl && br != bu) {
+          // TODO: Inject left-click mouse event.
 #if HORUS_PLAY_SOUND
           if (audio_device_) {
             SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
@@ -283,13 +285,9 @@ public:
           injected = true;
         }
 
-        // Handle fire state.
-        bool fire_expected = true;
-        const auto fire = fire_state.compare_exchange_strong(fire_expected, false);
-
         // Update the ready_ value.
         const auto state = eye_.parse(data);
-        update(tp0, state, injected || fire);
+        update(tp0, state, bl || injected);
 
         // Handle screenshot request.
         bool screenshot_expected = true;
@@ -324,16 +322,11 @@ public:
         stats_.clear();
         std::format_to(
           std::back_inserter(stats_),
-          "{:02d} fps | {:02.1f} ms | {:02d}/12 | {:1.2f} s | L:{} R:{} M:{} U:{} D:{}",
+          "{:02d} fps | {:02.1f} ms | {:02d}/12 | {:1.2f} s",
           static_cast<int>(frames_per_second_),
           average_duration_,
           ammo_,
-          blocked,
-          static_cast<int>(mouse_state_.rgbButtons[HORUS_BUTTON_LEFT]),
-          static_cast<int>(mouse_state_.rgbButtons[HORUS_BUTTON_RIGHT]),
-          static_cast<int>(mouse_state_.rgbButtons[HORUS_BUTTON_MIDDLE]),
-          static_cast<int>(mouse_state_.rgbButtons[HORUS_BUTTON_UP]),
-          static_cast<int>(mouse_state_.rgbButtons[HORUS_BUTTON_DOWN]));
+          blocked);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
 #  endif
@@ -492,11 +485,6 @@ public:
     log("plugin unloaded");
   }
 
-  static void fire() noexcept
-  {
-    fire_state.store(true, std::memory_order_release);
-  }
-
 private:
   obs_source_t* source_;
   gs_texrender_t* texrender_{ nullptr };
@@ -516,8 +504,6 @@ private:
   LPDIRECTINPUT8 input_{ nullptr };
   LPDIRECTINPUTDEVICE8 mouse_{ nullptr };
   DIMOUSESTATE2 mouse_state_{};
-
-  static inline std::atomic_bool fire_state{ false };
 
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::atomic_size_t screenshot_counter{ 0 };
@@ -603,23 +589,12 @@ static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
   static constexpr auto name = std::string_view("Overwatch");
   static auto text = std::string(static_cast<size_t>(size), '\0');
 
-  if (wparam == WM_MOUSEMOVE) {
-    return CallNextHookEx(hook, code, wparam, lparam);
-  }
-
-  if (const auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
-    if (std::string_view(text.data(), static_cast<std::size_t>(s)) != name) {
-      return CallNextHookEx(hook, code, wparam, lparam);
+  if (wparam == WM_MBUTTONDOWN) {
+    if (const auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
+      if (std::string_view(text.data(), static_cast<std::size_t>(s)) != name) {
+        horus::plugin::screenshot();
+      }
     }
-  }
-
-  switch (wparam) {
-  case WM_LBUTTONUP:
-    horus::plugin::fire();
-    break;
-  case WM_MBUTTONDOWN:
-    horus::plugin::screenshot();
-    break;
   }
 
   return CallNextHookEx(hook, code, wparam, lparam);

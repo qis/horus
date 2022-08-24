@@ -27,7 +27,7 @@
 #define HORUS_EFFECT_DIR "C:/OBS/horus/res"
 #define HORUS_IMAGES_DIR "C:/OBS/img"
 #define HORUS_DRAW_SCANS 1
-#define HORUS_SHOW_STATS HORUS_DEBUG
+#define HORUS_SHOW_STATS 1
 #define HORUS_PLAY_SOUND 1
 
 #define HORUS_BUTTON_LEFT 0
@@ -310,12 +310,12 @@ public:
         }
 
 #if HORUS_DRAW_SCANS
-        overlay = true;
-        eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
+        eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1, mx, my);
         if (shoot) {
           eye::draw_reticle(data, 0xFFFFFFFF, 0x00A5E7FF);
         }
-#  if HORUS_SHOW_STATS
+#endif
+#if HORUS_SHOW_STATS
         cv::Mat si(eye::sw, eye::sh, CV_8UC4, data, eye::sw * 4);
         const auto tpos = cv::Point(10, eye::sh - 10);
         auto blocked = 0.0;
@@ -333,8 +333,10 @@ public:
           blocked);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
-#  endif
+#endif
+#if HORUS_DRAW_SCANS || HORUS_SHOW_STATS
         gs_texture_set_image(scan_, data, eye::sw * 4, false);
+        overlay = true;
 #endif
         gs_stagesurface_unmap(stagesurf_);
       }

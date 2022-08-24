@@ -278,7 +278,7 @@ eye::state eye::parse(uint8_t* image) noexcept
   return { static_cast<unsigned>(ana / aw * ah), static_cast<unsigned>(ammo / aw * ah), count };
 }
 
-void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept
+void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs, int mx, int my) noexcept
 {
   // Restore polygons, that were skipped by the scan function.
   if (contours_.size()) {
@@ -306,6 +306,12 @@ void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) n
   if (ps >= 0 && polygons_.size()) {
     std::memset(overlays_.data(), 0, sw * sh);
     for (size_t i = 0, size = polygons_.size(); i < size; i++) {
+      if (mx != 0 || my != 0) {
+        for (auto& e : polygons_[i]) {
+          e.x -= mx;
+          e.y -= my;
+        }
+      }
       cv::drawContours(overlays_image_, polygons_, i, cv::Scalar(255), 1, cv::LINE_AA);
     }
     draw_overlays(image, static_cast<uint32_t>(ps));

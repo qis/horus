@@ -81,8 +81,10 @@ public:
   /// @param os 32-bit RGBA color for outline strokes (negative to disable).
   /// @param ps 32-bit RGBA color for polygon strokes (negative to disable).
   /// @param cs 32-bit RGBA color for contour strokes (negative to disable).
+  /// @param mx DirectInput mouse movement relative to the last frame (horizontal).
+  /// @param my DirectInput mouse movement relative to the last frame (vertical).
   ///
-  void draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept;
+  void draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs, int mx = 0, int my = 0) noexcept;
 
   /// Draws reticle over the image.
   ///

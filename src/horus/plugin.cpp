@@ -2,6 +2,7 @@
 #include <boost/asio/thread_pool.hpp>
 #include <horus/eye.hpp>
 #include <horus/log.hpp>
+#include <horus/mouse.hpp>
 #include <horus/obs.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -14,12 +15,6 @@
 #include <vector>
 
 #include <Windows.h>
-#include <dinput.h>
-#include <dinputd.h>
-
-#pragma comment(lib, "dinput8.lib")
-#pragma comment(lib, "dxguid.lib")
-
 #include <SDL.h>
 
 #define HORUS_LOGGER_LOG "C:/OBS/horus.log"
@@ -29,12 +24,6 @@
 #define HORUS_DRAW_SCANS 1
 #define HORUS_SHOW_STATS 1
 #define HORUS_PLAY_SOUND 1
-
-#define HORUS_BUTTON_LEFT 0
-#define HORUS_BUTTON_RIGHT 1
-#define HORUS_BUTTON_MIDDLE 2
-#define HORUS_BUTTON_DOWN 3
-#define HORUS_BUTTON_UP 4
 
 namespace horus {
 
@@ -101,64 +90,6 @@ public:
     if (audio_buffer_) {
       audio_device_ = SDL_OpenAudioDevice(nullptr, 0, &audio_spec_, nullptr, 0);
     }
-
-    struct enum_windows_data {
-      DWORD pid = GetCurrentProcessId();
-      HWND hwnd = nullptr;
-    } ewd;
-
-    EnumWindows(
-      [](HWND hwnd, LPARAM lparam) -> BOOL {
-        const auto ewd = reinterpret_cast<enum_windows_data*>(lparam);
-        DWORD pid = 0;
-        GetWindowThreadProcessId(hwnd, &pid);
-        if (pid == ewd->pid) {
-          ewd->hwnd = hwnd;
-          return FALSE;
-        }
-        return TRUE;
-      },
-      reinterpret_cast<LPARAM>(&ewd));
-
-    if (ewd.hwnd) {
-      auto hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-      if (SUCCEEDED(hr)) {
-        hr = DirectInput8Create(
-          GetModuleHandle(nullptr),
-          DIRECTINPUT_VERSION,
-          IID_IDirectInput8,
-          reinterpret_cast<LPVOID*>(&input_),
-          nullptr);
-        if (SUCCEEDED(hr)) {
-          hr = input_->CreateDevice(GUID_SysMouse, &mouse_, nullptr);
-          if (SUCCEEDED(hr)) {
-            hr = mouse_->SetDataFormat(&c_dfDIMouse2);
-            if (FAILED(hr)) {
-              log("could not set mouse data format");
-            }
-            hr = mouse_->SetCooperativeLevel(ewd.hwnd, DISCL_BACKGROUND | DISCL_NONEXCLUSIVE);
-            if (FAILED(hr)) {
-              log("could not set mouse cooperative level");
-            }
-            hr = mouse_->Acquire();
-            if (FAILED(hr)) {
-              log("could not acquire mouse");
-            }
-          } else {
-            log("could not create mouse device");
-            mouse_ = nullptr;
-            input_->Release();
-          }
-        } else {
-          log("could not initialize direct input");
-          input_ = nullptr;
-        }
-      } else {
-        log("could not initialize com library");
-      }
-    } else {
-      log("could not find current process window handle");
-    }
   }
 
   plugin(plugin&& other) = delete;
@@ -168,13 +99,6 @@ public:
 
   ~plugin()
   {
-    if (mouse_) {
-      mouse_->Unacquire();
-      mouse_->Release();
-    }
-    if (input_) {
-      input_->Release();
-    }
     if (audio_buffer_) {
       if (audio_device_) {
         SDL_CloseAudioDevice(audio_device_);
@@ -255,22 +179,10 @@ public:
       gs_stage_texture(stagesurf_, gs_texrender_get_texture(texrender_));
       if (gs_stagesurface_map(stagesurf_, &data, &line)) {
         // Get relative mouse travel distance since last call.
-        long mx = 0;
-        long my = 0;
-        bool bl = false;
-        bool br = false;
-        bool bu = false;
-        const auto hr = mouse_->GetDeviceState(sizeof(mouse_state_), &mouse_state_);
-        if (SUCCEEDED(hr)) {
-          mx = mouse_state_.lX;
-          my = mouse_state_.lY;
-          bl = mouse_state_.rgbButtons[HORUS_BUTTON_LEFT] != 0;
-          br = mouse_state_.rgbButtons[HORUS_BUTTON_RIGHT] != 0;
-          bu = mouse_state_.rgbButtons[HORUS_BUTTON_UP] != 0;
-        }
+        mouse_.get(mouse_state_);
 
         // Determine if a target is acquired.
-        const auto shoot = eye_.scan(data, mx, my);
+        const auto shoot = eye_.scan(data, mouse_state_.mx, mouse_state_.my);
 
 #if HORUS_SHOW_STATS
         // Measure the time it takes to decide if a target is acquired.
@@ -278,21 +190,21 @@ public:
 #endif
 
         // Inject left-click mouse event.
-        auto injected = false;
-        if (shoot && ready_ && !bl && br != bu) {
-          // TODO: Inject left-click mouse event.
+        auto inject = false;
+        if (shoot && ready_ && !mouse_state_.bl && mouse_state_.br != mouse_state_.bu) {
+          mouse_.inject();
+          inject = true;
 #if HORUS_PLAY_SOUND
           if (audio_device_) {
             SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
             SDL_PauseAudioDevice(audio_device_, 0);
           }
 #endif
-          injected = true;
         }
 
         // Update the ready_ value.
         const auto state = eye_.parse(data);
-        update(tp0, state, bl || injected);
+        update(tp0, state, mouse_state_.bl || inject);
 
         // Handle screenshot request.
         bool screenshot_expected = true;
@@ -304,13 +216,8 @@ public:
           }
         }
 
-        // Re-acquire mouse device when lost.
-        if (FAILED(hr)) {
-          mouse_->Acquire();
-        }
-
 #if HORUS_DRAW_SCANS
-        eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1, mx, my);
+        eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1, mouse_state_.mx, mouse_state_.my);
         if (shoot) {
           eye::draw_reticle(data, 0xFFFFFFFF, 0x00A5E7FF);
         }
@@ -497,17 +404,16 @@ private:
   gs_effect_t* draw_{ nullptr };
 
   std::uintptr_t name_{ 0 };
+
   eye eye_;
+  mouse mouse_;
+  mouse::state mouse_state_;
 
   bool ready_ = true;
   unsigned ammo_ = 0;
   clock::time_point blocked_;
   std::random_device random_device_;
   std::uniform_int_distribution<long long> random_distribution_;
-
-  LPDIRECTINPUT8 input_{ nullptr };
-  LPDIRECTINPUTDEVICE8 mouse_{ nullptr };
-  DIMOUSESTATE2 mouse_state_{};
 
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::atomic_size_t screenshot_counter{ 0 };

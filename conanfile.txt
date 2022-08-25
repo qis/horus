@@ -3,6 +3,7 @@ boost/[x]
 libpng/[x]
 opencv/[x]
 onetbb/[x]
+hidapi/[x]
 sdl/[x]
 
 [generators]

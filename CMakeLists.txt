@@ -46,6 +46,9 @@ target_link_libraries(horus PUBLIC
   opencv::imgcodecs
   opencv::imgproc)
 
+find_package(hidapi REQUIRED)
+target_link_libraries(horus PUBLIC hidapi::hidapi)
+
 find_package(SDL2 REQUIRED COMPONENTS SDL2-static)
 target_link_libraries(horus PUBLIC SDL2::SDL2-static)
 

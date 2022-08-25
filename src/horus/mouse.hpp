@@ -1,10 +1,11 @@
 #pragma once
+#include "config.hpp"
 #include <dinput.h>
 #include <dinputd.h>
 
 namespace horus {
 
-class mouse {
+class HORUS_API mouse {
 public:
   struct state {
     long mx = 0;      // mouse movement since last get call (horizontal)

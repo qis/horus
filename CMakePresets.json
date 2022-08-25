@@ -17,7 +17,7 @@
       },
       "cacheVariables": {
         "CMAKE_CONFIGURATION_TYPES": "Debug;Release;MinSizeRel;RelWithDebInfo",
-        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreadedDLL",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded",
         "CMAKE_RC_FLAGS": "/nologo -DWIN32",
         "CONAN_CMAKE_SILENT_OUTPUT": true
       }

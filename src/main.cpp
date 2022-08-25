@@ -1,5 +1,6 @@
 #include <horus/eye.hpp>
 #include <horus/log.hpp>
+#include <horus/mouse.hpp>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -88,6 +89,7 @@ int main(int argc, char* argv[])
 {
   horus::logger logger("C:/OBS/horus.log", true);
   try {
+    /*
     cv::namedWindow("Horus", cv::WindowFlags::WINDOW_NORMAL);
     const auto property = cv::WindowPropertyFlags::WND_PROP_FULLSCREEN;
     const auto value = cv::WindowFlags::WINDOW_FULLSCREEN;
@@ -126,6 +128,10 @@ int main(int argc, char* argv[])
     }
 
     cv::destroyWindow("Horus");
+    */
+
+    horus::mouse mouse;
+
   }
   catch (const std::exception& e) {
     horus::log("error: {}", e.what());

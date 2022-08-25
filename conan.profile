@@ -1,5 +1,5 @@
 include(default)
 
 [settings]
-compiler.runtime=MD
+compiler.runtime=MT
 compiler.version=16

@@ -112,5 +112,7 @@ Options
   Player Outline Strength: 100%
 ```
 
+The code to inject mouse buttons relies on [anubis](https://github.com/qis/anubis), which is a private project.
+
 [obs]: https://github.com/obsproject/obs-studio/releases/tag/27.2.4
 [py3]: https://www.python.org/downloads/windows/

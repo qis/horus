@@ -1,0 +1,3 @@
+[submodule "src/anubis"]
+	path = src/anubis
+	url = git@github.com:qis/anubis

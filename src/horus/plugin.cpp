@@ -1,3 +1,4 @@
+#include <anubis/client.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <horus/eye.hpp>
@@ -182,45 +183,35 @@ public:
         mouse_.get(mouse_state_);
 
         // Determine if a target is acquired.
-        const auto shoot = eye_.scan(data, mouse_state_.mx, mouse_state_.my);
+        const auto ax = std::pow(std::abs(mouse_state_.mx) * 2.0f, 1.05f);
+        const auto ay = std::pow(std::abs(mouse_state_.my) * 2.0f, 1.05f);
+        const auto mx = mouse_state_.mx < 0 ? -ax : ax;
+        const auto my = mouse_state_.my < 0 ? -ay : ay;
+        const auto shoot = eye_.scan(data, mx, my);
 
 #if HORUS_SHOW_STATS
         // Measure the time it takes to decide if a target is acquired.
         tp1 = clock::now();
 #endif
 
-        // Inject left-click mouse event.
-        auto inject = false;
+        // Press left mouse button.
+        auto injected = false;
         if (shoot && ready_ && !mouse_state_.bl && mouse_state_.br != mouse_state_.bu) {
-          mouse_.inject();
-          inject = true;
+          client_.inject(0x01);
+          injected = true;
 #if HORUS_PLAY_SOUND
-          if (audio_device_) {
-            SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
-            SDL_PauseAudioDevice(audio_device_, 0);
-          }
+          play_sound();
 #endif
         }
 
         // Update the ready_ value.
         const auto state = eye_.parse(data);
-        update(tp0, state, mouse_state_.bl || inject);
-
-        // Handle screenshot request.
-        bool screenshot_expected = true;
-        if (screenshot_request.compare_exchange_strong(screenshot_expected, false)) {
-          screenshot(data, screenshot_counter.fetch_add(1));
-          if (audio_device_) {
-            SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
-            SDL_PauseAudioDevice(audio_device_, 0);
-          }
-        }
+        update(tp0, state, mouse_state_.bl || injected);
 
 #if HORUS_DRAW_SCANS
-        eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1, mouse_state_.mx, mouse_state_.my);
-        if (shoot) {
-          eye::draw_reticle(data, 0xFFFFFFFF, 0x00A5E7FF);
-        }
+        //eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
+        eye_.draw(data, 0x09BC2460, 0xFFFFFFFF, 0x08DE29C0, 0x2409BC60);
+        eye_.draw_reticle(data, 0x000000FF, 0x00A5E7FF);
 #endif
 #if HORUS_SHOW_STATS
         cv::Mat si(eye::sw, eye::sh, CV_8UC4, data, eye::sw * 4);
@@ -241,6 +232,14 @@ public:
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
 #endif
+
+        // Handle screenshot request.
+        bool screenshot_expected = true;
+        if (screenshot_request.compare_exchange_strong(screenshot_expected, false)) {
+          screenshot(data, screenshot_counter.fetch_add(1));
+          play_sound();
+        }
+
 #if HORUS_DRAW_SCANS || HORUS_SHOW_STATS
         gs_texture_set_image(scan_, data, eye::sw * 4, false);
         overlay = true;
@@ -339,6 +338,14 @@ public:
     }
   }
 
+  void play_sound() noexcept
+  {
+    if (audio_device_) {
+      SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
+      SDL_PauseAudioDevice(audio_device_, 0);
+    }
+  }
+
   static void screenshot() noexcept
   {
     screenshot_request.store(true, std::memory_order_release);
@@ -353,6 +360,7 @@ public:
         try {
           cv::Mat image(eye::sw, eye::sh, CV_8UC4, data.get(), eye::sw * 4);
           cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
+
           cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:09d}.png", counter), image);
 
           //const auto ammo = image(cv::Rect(0, 0, eye::aw, eye::ah));
@@ -408,12 +416,13 @@ private:
   eye eye_;
   mouse mouse_;
   mouse::state mouse_state_;
+  anubis::client client_;
 
   bool ready_ = true;
   unsigned ammo_ = 0;
   clock::time_point blocked_;
   std::random_device random_device_;
-  std::uniform_int_distribution<long long> random_distribution_;
+  std::uniform_int_distribution<clock::duration::rep> random_distribution_;
 
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::atomic_size_t screenshot_counter{ 0 };
@@ -500,11 +509,12 @@ static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
   static auto text = std::string(static_cast<size_t>(size), '\0');
 
   if (wparam == WM_MBUTTONDOWN) {
-    if (const auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
-      if (std::string_view(text.data(), static_cast<std::size_t>(s)) != name) {
-        horus::plugin::screenshot();
-      }
-    }
+    horus::plugin::screenshot();
+    //if (const auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
+    //  if (std::string_view(text.data(), static_cast<std::size_t>(s)) == name) {
+    //    horus::plugin::screenshot();
+    //  }
+    //}
   }
 
   return CallNextHookEx(hook, code, wparam, lparam);

@@ -78,11 +78,6 @@ mouse::~mouse()
   }
 }
 
-void mouse::inject() noexcept
-{
-  // TODO
-}
-
 bool mouse::get(state& state) noexcept
 {
   const auto hr = device_->GetDeviceState(sizeof(state_), &state_);

@@ -24,8 +24,6 @@ public:
   mouse& operator=(const mouse& other) = delete;
   ~mouse();
 
-  void inject() noexcept;
-
   bool get(state& state) noexcept;
 
 private:

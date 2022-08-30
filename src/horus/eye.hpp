@@ -49,6 +49,15 @@ public:
   // Overlay color (minimum red, maximum green, minimum blue).
   static constexpr uint32_t oc = 0xA060A0;
 
+  // Minimum distance between cursor interpolation points (must be even and greater, or equal to 2).
+  static constexpr long cursor_interpolation_distance = 4;
+
+  // Maximum number of cursor interpolation points (must be even and greater, or equal to 4).
+  static constexpr size_t cursor_interpolation_capacity = 8;
+
+  // Cursor interpolation point starting position (must be between 0.05 and 0.95).
+  static constexpr float cursor_interpolation_position = 0.6f;
+
   eye();
   eye(eye&& other) = delete;
   eye(const eye& other) = delete;
@@ -64,7 +73,7 @@ public:
   ///
   /// @return Returns true if the middle of the image is likely to be on a target.
   ///
-  bool scan(const uint8_t* image, int mx = 0, int my = 0) noexcept;
+  bool scan(const uint8_t* image, float mx = 0.0f, float my = 0.0f) noexcept;
 
   /// Tries to parse the current UI state.
   ///
@@ -84,7 +93,7 @@ public:
   /// @param mx DirectInput mouse movement relative to the last frame (horizontal).
   /// @param my DirectInput mouse movement relative to the last frame (vertical).
   ///
-  void draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs, int mx = 0, int my = 0) noexcept;
+  void draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept;
 
   /// Draws reticle over the image.
   ///
@@ -92,7 +101,7 @@ public:
   /// @param oc 32-bit RGBA color for outer circle.
   /// @param ic 32-bit RGBA color for inner cross.
   ///
-  static void draw_reticle(uint8_t* image, uint32_t oc, uint32_t ic) noexcept;
+  void draw_reticle(uint8_t* image, uint32_t oc, uint32_t ic) noexcept;
 
   /// Desaturates the image.
   ///
@@ -117,6 +126,10 @@ private:
   std::vector<cv::Vec4i> hierarchy_;
   std::vector<std::vector<cv::Point>> contours_;
   std::vector<std::vector<cv::Point>> polygons_;
+  std::vector<cv::Point> hull_;
+
+  std::array<cv::Point2f, cursor_interpolation_capacity> cursor_interpolation_;
+  size_t cursor_interpolation_size_{ 1 };
 
   cv::Mat ammo_scan_;
   std::array<cv::Mat, 13> ammo_scans_;

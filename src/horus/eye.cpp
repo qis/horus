@@ -7,6 +7,8 @@
 #include <format>
 #include <cassert>
 
+#include <horus/log.hpp>
+
 #define HORUS_DATA_DIR "C:/OBS/horus/res"
 
 namespace horus {
@@ -60,6 +62,15 @@ constexpr unsigned rgba2gray(uint8_t* di) noexcept
 
 }  // namespace
 
+static_assert(eye::cursor_interpolation_capacity >= 4);
+static_assert(eye::cursor_interpolation_capacity % 2 == 0);
+
+static_assert(eye::cursor_interpolation_distance >= 2);
+static_assert(eye::cursor_interpolation_distance % 2 == 0);
+
+static_assert(eye::cursor_interpolation_position >= 0.05f);
+static_assert(eye::cursor_interpolation_position <= 0.95f);
+
 eye::eye() :
   outlines_buffer_(sw * sh),
   outlines_(sw * sh),
@@ -105,7 +116,7 @@ eye::eye() :
   }
 }
 
-bool eye::scan(const uint8_t* image, int mx, int my) noexcept
+bool eye::scan(const uint8_t* image, float mx, float my) noexcept
 {
   // Prepare outlines and outlines buffer.
   std::memset(outlines_.data(), 0, sw * sh);
@@ -216,39 +227,57 @@ bool eye::scan(const uint8_t* image, int mx, int my) noexcept
   // Find countours.
   cv::findContours(outlines_image_, contours_, hierarchy_, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
-  // Get the center of the image.
-  const auto center = cv::Point2f(sw / 2.0f, sh / 2.0f);
+  // Create cursor interpolation.
+  const auto x0 = sw / 2.0f;
+  const auto y0 = sh / 2.0f;
+  const auto x1 = x0 + mx;
+  const auto y1 = y0 + my;
+  if (const auto cd = std::max(std::abs(mx), std::abs(my)); cd < cursor_interpolation_distance / 2) {
+    cursor_interpolation_size_ = 1;
+    cursor_interpolation_[0] = { x0, y0 };
+  } else if (cd < cursor_interpolation_distance) {
+    cursor_interpolation_size_ = 1;
+    cursor_interpolation_[0] = { x1, y1 };
+  } else if (cd < cursor_interpolation_distance * 2) {
+    cursor_interpolation_size_ = 2;
+    cursor_interpolation_[0] = { std::lerp(x0, x1, 0.5f), std::lerp(y0, y1, 0.5f) };
+    cursor_interpolation_[1] = { x1, y1 };
+  } else {
+    const auto cs = static_cast<size_t>(cd * (1.0f - cursor_interpolation_position));
+    const auto ct = std::max(cs / cursor_interpolation_distance, size_t(1));
+    cursor_interpolation_size_ = std::min(ct, cursor_interpolation_capacity);
+    const auto s = (1.0f - cursor_interpolation_position) / cursor_interpolation_size_;
+    auto t = cursor_interpolation_position;
+    for (size_t i = 0; i < cursor_interpolation_size_ - 1; i++) {
+      cursor_interpolation_[i] = { std::lerp(x0, x1, t), std::lerp(y0, y1, t) };
+      t += s;
+    }
+    cursor_interpolation_[cursor_interpolation_size_ - 1] = { x1, y1 };
+  }
+
+  // Increase the cursor to hull distance based on mouse interpolation.
+  constexpr auto mf = 0.2f;
+  const auto md = std::sqrt(std::pow(mx, 2.0f) + std::pow(my, 2.0f));
+  const auto dm = 1.0f + mf - (std::min(md, 64.0f)) / 64.0f * mf;
 
   // Create polygons and check if the center of the image is targeting an enemy.
-  polygons_.resize(1);
-  for (size_t i = 0, size = contours_.size(); i < size; i++) {
-    cv::convexHull(cv::Mat(contours_[i]), polygons_[0]);
-    if (auto distance = cv::pointPolygonTest(polygons_[0], center, true); distance > 2.0) {
-      const auto rect = cv::boundingRect(polygons_[0]);
-      const auto x = sw / 2;
-      const auto l = rect.x + rect.width / 8;
-      const auto r = rect.x + rect.width - rect.width / 8;
-      if (l < x && x < r) {
-        return true;
+  for (auto& contour : contours_) {
+    cv::convexHull(cv::Mat(contour), hull_);
+    for (size_t i = 0; i < cursor_interpolation_size_; i++) {
+      auto& cursor_interpolation = cursor_interpolation_[i];
+      const auto x = cursor_interpolation.x;
+      const auto y = cursor_interpolation.y;
+      if (x < 0 || x > sw || y < 0 || y > sh) {
+        continue;
       }
-    }
-    if (mx != 0 || my != 0) {
-      for (auto& e : polygons_[0]) {
-        e.x -= mx;
-        e.y -= my;
-      }
-      if (auto distance = cv::pointPolygonTest(polygons_[0], center, true); distance > 2.0) {
-        const auto rect = cv::boundingRect(polygons_[0]);
-        const auto x = sw / 2;
-        const auto l = rect.x + rect.width / 8;
-        const auto r = rect.x + rect.width - rect.width / 8;
-        if (l < x && x < r) {
+      if (auto distance = cv::pointPolygonTest(hull_, cursor_interpolation, true); distance > 2.0) {
+        const auto rect = cv::boundingRect(hull_);
+        if (distance > std::sqrt(rect.width * rect.height) / 8 * dm) {
           return true;
         }
       }
     }
   }
-  polygons_.clear();
   return false;
 }
 
@@ -278,7 +307,7 @@ eye::state eye::parse(uint8_t* image) noexcept
   return { static_cast<unsigned>(ana / aw * ah), static_cast<unsigned>(ammo / aw * ah), count };
 }
 
-void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs, int mx, int my) noexcept
+void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept
 {
   // Restore polygons, that were skipped by the scan function.
   if (contours_.size()) {
@@ -306,12 +335,6 @@ void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs, i
   if (ps >= 0 && polygons_.size()) {
     std::memset(overlays_.data(), 0, sw * sh);
     for (size_t i = 0, size = polygons_.size(); i < size; i++) {
-      if (mx != 0 || my != 0) {
-        for (auto& e : polygons_[i]) {
-          e.x -= mx;
-          e.y -= my;
-        }
-      }
       cv::drawContours(overlays_image_, polygons_, i, cv::Scalar(255), 1, cv::LINE_AA);
     }
     draw_overlays(image, static_cast<uint32_t>(ps));
@@ -337,41 +360,49 @@ void eye::draw_reticle(uint8_t* image, uint32_t oc, uint32_t ic) noexcept
     return count * 4;
   };
 
-  const overlay_color ooc(oc);
-  const overlay_color oic(ic);
+  for (size_t i = 0; i < cursor_interpolation_size_; i++) {
+    const auto sx = static_cast<long>(cursor_interpolation_[i].x);
+    const auto sy = static_cast<long>(cursor_interpolation_[i].y);
+    if (sx < 4 || sx > sw - 4 || sy < 4 || sy > sh - 4) {
+      continue;
+    }
 
-  auto di = image + (sh / 2 - 2) * sw * 4 + (sw / 2 - 2) * 4;  // dst iterator
+    const overlay_color ooc(oc);
+    const overlay_color oic(ic);
 
-  // Line 1.
-  di += set(di, ooc, 4);
-  di += sw * 4 - 5 * 4;
+    auto di = image + (sy - 2) * sw * 4 + (sx - 2) * 4;  // dst iterator
 
-  // Line 2.
-  di += set(di, ooc, 2);
-  di += set(di, oic, 2);
-  di += set(di, ooc, 2);
-  di += sw * 4 - 6 * 4;
+    // Line 1.
+    di += set(di, ooc, 4);
+    di += sw * 4 - 5 * 4;
 
-  // Line 3.
-  di += set(di, ooc, 1);
-  di += set(di, oic, 4);
-  di += set(di, ooc, 1);
-  di += sw * 4 - 6 * 4;
+    // Line 2.
+    di += set(di, ooc, 2);
+    di += set(di, oic, 2);
+    di += set(di, ooc, 2);
+    di += sw * 4 - 6 * 4;
 
-  // Line 4.
-  di += set(di, ooc, 1);
-  di += set(di, oic, 4);
-  di += set(di, ooc, 1);
-  di += sw * 4 - 6 * 4;
+    // Line 3.
+    di += set(di, ooc, 1);
+    di += set(di, oic, 4);
+    di += set(di, ooc, 1);
+    di += sw * 4 - 6 * 4;
 
-  // Line 5.
-  di += set(di, ooc, 2);
-  di += set(di, oic, 2);
-  di += set(di, ooc, 2);
-  di += sw * 4 - 5 * 4;
+    // Line 4.
+    di += set(di, ooc, 1);
+    di += set(di, oic, 4);
+    di += set(di, ooc, 1);
+    di += sw * 4 - 6 * 4;
 
-  // Line 6.
-  set(di, ooc, 4);
+    // Line 5.
+    di += set(di, ooc, 2);
+    di += set(di, oic, 2);
+    di += set(di, ooc, 2);
+    di += sw * 4 - 5 * 4;
+
+    // Line 6.
+    set(di, ooc, 4);
+  }
 }
 
 void eye::desaturate(uint8_t* image) noexcept

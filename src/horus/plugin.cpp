@@ -209,8 +209,8 @@ public:
         update(tp0, state, mouse_state_.bl || injected);
 
 #if HORUS_DRAW_SCANS
-        //eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
-        eye_.draw(data, 0x09BC2460, 0xFFFFFFFF, 0x08DE29C0, 0x2409BC60);
+        eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
+        //eye_.draw(data, 0x09BC2460, 0xFFFFFFFF, 0x08DE29C0, 0x2409BC60);
         eye_.draw_reticle(data, 0x000000FF, 0x00A5E7FF);
 #endif
 #if HORUS_SHOW_STATS
@@ -281,7 +281,7 @@ public:
   void update(clock::time_point now, const eye::state& state, bool fire) noexcept
   {
     // Do not try to update the ammo value if the character is not ana.
-    if (state.ana > 1000) {
+    if (state.skin > 1000) {
       ready_ = false;
       return;
     }

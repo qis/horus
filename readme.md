@@ -114,5 +114,12 @@ Options
 
 The code to inject mouse buttons relies on [anubis](https://github.com/qis/anubis), which is a private project.
 
+## TODO
+- Get a high refreshrate monitor.
+- Move mouse interpolation to plugin.
+- Calculate when to shoot between frames.
+- Instead of using the close kernel a second time, connect contours?
+- Replace low level mouse hook with DirectInput.
+
 [obs]: https://github.com/obsproject/obs-studio/releases/tag/27.2.4
 [py3]: https://www.python.org/downloads/windows/

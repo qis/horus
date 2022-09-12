@@ -197,7 +197,7 @@ public:
         // Press left mouse button.
         auto injected = false;
         if (shoot && ready_ && !mouse_state_.bl && mouse_state_.br != mouse_state_.bu) {
-          client_.inject(0x01);
+          client_.mask(anubis::button::left, std::chrono::milliseconds(7));
           injected = true;
 #if HORUS_PLAY_SOUND
           play_sound();
@@ -207,6 +207,13 @@ public:
         // Update the ready_ value.
         const auto state = eye_.parse(data);
         update(tp0, state, mouse_state_.bl || injected);
+
+        // Handle screenshot request.
+        bool screenshot_expected = true;
+        if (screenshot_request.compare_exchange_strong(screenshot_expected, false)) {
+          screenshot(data, screenshot_counter.fetch_add(1));
+          play_sound();
+        }
 
 #if HORUS_DRAW_SCANS
         eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
@@ -232,14 +239,6 @@ public:
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
 #endif
-
-        // Handle screenshot request.
-        bool screenshot_expected = true;
-        if (screenshot_request.compare_exchange_strong(screenshot_expected, false)) {
-          screenshot(data, screenshot_counter.fetch_add(1));
-          play_sound();
-        }
-
 #if HORUS_DRAW_SCANS || HORUS_SHOW_STATS
         gs_texture_set_image(scan_, data, eye::sw * 4, false);
         overlay = true;
@@ -281,10 +280,23 @@ public:
   void update(clock::time_point now, const eye::state& state, bool fire) noexcept
   {
     // Do not try to update the ammo value if the character is not ana.
-    if (state.skin > 1000) {
+    if (state.hero > 1000) {
       ready_ = false;
       return;
     }
+
+    // TODO: This is the Reaper section. Select hero instead!
+    if (now < blocked_) {
+      ready_ = false;
+      return;
+    }
+    if (fire) {
+      blocked_ = now + click_duration;
+      ready_ = false;
+      return;
+    }
+    ready_ = true;
+    return;
 
     // Update ammo value.
     if (state.ammo < 100) {
@@ -351,23 +363,27 @@ public:
     screenshot_request.store(true, std::memory_order_release);
   }
 
-  static void screenshot(uint8_t* image, size_t counter) noexcept
+  void screenshot(uint8_t* image, size_t counter) noexcept
   {
     std::unique_ptr<uint8_t[]> data(new uint8_t[eye::sw * eye::sh * 4]);
     std::memcpy(data.get(), image, eye::sw * eye::sh * 4);
     if (auto sp = screenshot_thread_pool) {
-      boost::asio::post(*sp, [data = std::move(data), counter]() noexcept {
+      boost::asio::post(*sp, [this, data = std::move(data), counter]() noexcept {
         try {
           cv::Mat image(eye::sw, eye::sh, CV_8UC4, data.get(), eye::sw * 4);
           cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
 
-          cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:09d}.png", counter), image);
+          //cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:09d}.png", counter), image);
 
           //const auto ammo = image(cv::Rect(0, 0, eye::aw, eye::ah));
           //cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:02d}.png", 12 - counter), ammo);
 
-          //const auto ana = image(cv::Rect(eye::aw, 0, eye::pw, eye::ph));
-          //cv::imwrite(HORUS_IMAGES_DIR "/ana.png", ana);
+          const auto ana = image(cv::Rect(eye::aw, 0, eye::pw, eye::ph));
+          cv::imwrite(HORUS_IMAGES_DIR "/hero.png", ana);
+
+          //const auto sr = image(cv::Rect(580, 512, 100, 38));
+          //cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:04d}.png", counter), sr);
+          //client_.mask(anubis::button::left, std::chrono::milliseconds(7));
         }
         catch (const std::exception& e) {
           log("could not save image: {}", counter);
@@ -509,12 +525,12 @@ static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
   static auto text = std::string(static_cast<size_t>(size), '\0');
 
   if (wparam == WM_MBUTTONDOWN) {
-    horus::plugin::screenshot();
-    //if (const auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
-    //  if (std::string_view(text.data(), static_cast<std::size_t>(s)) == name) {
-    //    horus::plugin::screenshot();
-    //  }
-    //}
+    //horus::plugin::screenshot();
+    if (const auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
+      if (std::string_view(text.data(), static_cast<std::size_t>(s)) == name) {
+        horus::plugin::screenshot();
+      }
+    }
   }
 
   return CallNextHookEx(hook, code, wparam, lparam);

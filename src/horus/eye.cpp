@@ -88,14 +88,31 @@ eye::eye()
     cv::threshold(ammo_scans_[i], ammo_masks_[i], 0x33, 0xFF, cv::THRESH_BINARY);
   }
 
-  skin_scan_ = cv::Mat(cv::Size(pw, ph), CV_8UC1);
-  skin_scans_[0] = cv::Mat(cv::Size(pw, ph), CV_8UC1);
+  hero_scan_ = cv::Mat(cv::Size(pw, ph), CV_8UC1);
+  hero_scans_[0] = cv::Mat(cv::Size(pw, ph), CV_8UC1);
+  hero_scans_[1] = cv::Mat(cv::Size(pw, ph), CV_8UC1);
+  hero_scans_[2] = cv::Mat(cv::Size(pw, ph), CV_8UC1);
 
-  auto skin = cv::imread(HORUS_DATA_DIR "/portraits/ana.png", cv::IMREAD_UNCHANGED);
-  assert(skin.cols == pw);
-  assert(skin.rows == ph);
-  assert(skin.channels() == 4);
-  cv::cvtColor(skin, skin_scans_[0], cv::COLOR_BGRA2GRAY);
+  if (auto hero = cv::imread(HORUS_DATA_DIR "/heroes/ana.png", cv::IMREAD_UNCHANGED); hero.size) {
+    assert(hero.cols == pw);
+    assert(hero.rows == ph);
+    assert(hero.channels() == 4);
+    cv::cvtColor(hero, hero_scans_[0], cv::COLOR_BGRA2GRAY);
+  }
+
+  if (auto hero = cv::imread(HORUS_DATA_DIR "/heroes/ashe.png", cv::IMREAD_UNCHANGED); hero.size) {
+    assert(hero.cols == pw);
+    assert(hero.rows == ph);
+    assert(hero.channels() == 4);
+    cv::cvtColor(hero, hero_scans_[1], cv::COLOR_BGRA2GRAY);
+  }
+
+  if (auto hero = cv::imread(HORUS_DATA_DIR "/heroes/reaper.png", cv::IMREAD_UNCHANGED); hero.size) {
+    assert(hero.cols == pw);
+    assert(hero.rows == ph);
+    assert(hero.channels() == 4);
+    cv::cvtColor(hero, hero_scans_[2], cv::COLOR_BGRA2GRAY);
+  }
 }
 
 bool eye::scan(const uint8_t* image, float mx, float my) noexcept
@@ -126,27 +143,31 @@ bool eye::scan(const uint8_t* image, float mx, float my) noexcept
     }
   });
 
-  // Remove single outline pixels.
-  //tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
-  //  const auto rb = range.begin();
-  //  const auto re = range.end();
-  //  auto si = outlines_.data() + rb * sw;  // src iterator
-  //  auto pi = si - sw;                     // pixel above the src iterator
-  //  auto ni = si + sw;                     // pixel below the src iterator
-  //  for (auto y = rb; y < re; y++) {
-  //    for (auto x = 1; x < sw - 0; x++) {
-  //      if (si[1] && pi[0] + pi[1] + pi[2] + si[0] + si[1] + si[2] + ni[0] + ni[1] + ni[2] == 1) {
-  //        si[1] = 0x00;
-  //      }
-  //      si += 1;
-  //      pi += 1;
-  //      ni += 1;
-  //    }
-  //    si += 2;
-  //    pi += 2;
-  //    ni += 2;
-  //  }
-  //});
+  // Remove single outline pixels and those who have too many outline pixels as neighbours.
+  // TODO: Restore old version that uses two passes if this is not enough.
+  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
+    const auto rb = range.begin();
+    const auto re = range.end();
+    auto si = outlines_.data() + rb * sw;  // src iterator
+    auto pi = si - sw;                     // pixel above the src iterator
+    auto ni = si + sw;                     // pixel below the src iterator
+    for (auto y = rb; y < re; y++) {
+      for (auto x = 1; x < sw - 0; x++) {
+        if (si[1]) {
+          const auto count = pi[0] + pi[1] + pi[2] + si[0] + si[1] + si[2] + ni[0] + ni[1] + ni[2];
+          if (count == 1 || count > 6) {
+            si[1] = 0x00;
+          }
+        }
+        si += 1;
+        pi += 1;
+        ni += 1;
+      }
+      si += 2;
+      pi += 2;
+      ni += 2;
+    }
+  });
 
   // Close small gaps in outlines.
   cv::morphologyEx(outlines_image_, outlines_image_, cv::MORPH_CLOSE, close_kernel_);
@@ -296,7 +317,7 @@ eye::state eye::parse(uint8_t* image) noexcept
 {
   constexpr auto norm_type = cv::NORM_INF;
 
-  auto skin = std::numeric_limits<double>::max();
+  auto hero = std::numeric_limits<double>::max();
   auto ammo = std::numeric_limits<double>::max();
   auto count = unsigned(0);
 
@@ -310,12 +331,12 @@ eye::state eye::parse(uint8_t* image) noexcept
     }
   }
 
-  cv::cvtColor(src(cv::Rect(aw, 0, pw, ph)), skin_scan_, cv::COLOR_RGBA2GRAY);
-  for (const auto& e : skin_scans_) {
-    skin = std::min(skin, cv::norm(skin_scan_, e));
+  cv::cvtColor(src(cv::Rect(aw, 0, pw, ph)), hero_scan_, cv::COLOR_RGBA2GRAY);
+  for (const auto& e : hero_scans_) {
+    hero = std::min(hero, cv::norm(hero_scan_, e));
   }
 
-  return { static_cast<unsigned>(skin / aw * ah), static_cast<unsigned>(ammo / aw * ah), count };
+  return { static_cast<unsigned>(hero / aw * ah), static_cast<unsigned>(ammo / aw * ah), count };
 }
 
 void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept

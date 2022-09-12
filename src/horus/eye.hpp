@@ -11,8 +11,8 @@ namespace horus {
 class HORUS_API eye {
 public:
   struct state {
-    // Error for the detected skin value.
-    unsigned skin;
+    // Error for the detected hero value.
+    unsigned hero;
 
     // Error for the detected ammo value.
     unsigned ammo;
@@ -144,8 +144,8 @@ private:
   std::array<cv::Mat, 13> ammo_scans_;
   std::array<cv::Mat, 13> ammo_masks_;
 
-  cv::Mat skin_scan_;
-  std::array<cv::Mat, 1> skin_scans_;
+  cv::Mat hero_scan_;
+  std::array<cv::Mat, 3> hero_scans_;
 };
 
 }  // namespace horus

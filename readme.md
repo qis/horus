@@ -95,21 +95,64 @@ Options
     Friendly UI Color: Blue (Friendly Default)
 + Controls
   + Reticle
-    + Type: Dot
+    + Type: Circle
       Show Accuracy: Off
       Color: [Bright Green]
       Thickness: 1
       Center Gap: 30
-      Opacity: 100
-      Outline Opacity: 100
+      Opacity: 80
+      Outline Opacity: 50
       Dot Size: 6
       Dot Opacity: 100
       Scale with Resolution: Off
+  + Hero
+    Allied Health Bars: Always
+  + Movement
+    Jump: SPACE | `horus M 3`
+  + Weapos & Abilities
+    Ability 1: LSHIFT | `horus D 3`
+    Ability 2: E | `horus U 3`
+    Quick Melee: TAB
+    Next Weapon: EMPTY
+    Previous Weapon: EMPTY
+  + Communication
+    Voice Line (Up): V
++ Controls (Ana)
+  + Reticle
+    + Type: Dot
+  + Hero
+    Relative Aim Sensitivity While Zoomed: 46.00
++ Controls (Ashe)
+  + Reticle
+    + Type: Dot
+  + Hero
+    Relative Aim Sensitivity While Zoomed: 61.00
++ Controls (Mercy)
+  + Weapos & Abilities
+    Equip Weapon 1: 1 | SCROLL WHEEL UP
+    Equip Weapon 2: 2 | SCROLL WHEEL DOWN
++ Controls (Pharah)
+  + Weapos & Abilities
+    Secondary Fire: EMPTY
++ Controls (Reaper)
+  + Reticle
+    + Type: Circle
+      Center Gap: 100
++ Controls (Zenyatta)
+  + Weapos & Abilities
+    Ability 1: SCROLL WHEEL UP
+    Ability 2: SCROLL WHEEL DOWN
 + Gameplay
   Waypoint Opacity: 30%
   Respawn Icon Opacity: 30%
   Ability Timer Ring Opacity: 30%
   Player Outline Strength: 100%
+
+Hero Gallery
++ Ana > Skins: Horus
++ Ashe > Skins: Sunflower (Change to Safari and update res/heroes/ashe.png)
++ Pharah > Skins: Security Chief
++ Reaper > Skins: Blackwatch Reyes
 ```
 
 The code to inject mouse buttons relies on [anubis](https://github.com/qis/anubis), which is a private project.
@@ -120,6 +163,8 @@ The code to inject mouse buttons relies on [anubis](https://github.com/qis/anubi
 - Calculate when to shoot between frames.
 - Instead of using the close kernel a second time, connect contours?
 - Replace low level mouse hook with DirectInput.
+- Blink and 180 turn as Tracer.
+- Infinite flight as Pharah.
 
 [obs]: https://github.com/obsproject/obs-studio/releases/tag/27.2.4
 [py3]: https://www.python.org/downloads/windows/

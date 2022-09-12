@@ -54,9 +54,16 @@ add_executable(main src/main.cpp src/main.manifest src/main.rc)
 set_target_properties(main PROPERTIES OUTPUT_NAME horus)
 target_link_libraries(main PRIVATE horus)
 
-set_target_properties(horus main PROPERTIES
+set_target_properties(horus PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY_DEBUG "C:/OBS/obs-plugins/64bit"
   RUNTIME_OUTPUT_DIRECTORY_RELEASE "C:/OBS/obs-plugins/64bit"
   RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "C:/OBS/obs-plugins/64bit"
   RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "C:/OBS/obs-plugins/64bit"
   RUNTIME_OUTPUT_DIRECTORY_COVERAGE "C:/OBS/obs-plugins/64bit")
+
+set_target_properties(main PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY_DEBUG "C:/OBS/"
+  RUNTIME_OUTPUT_DIRECTORY_RELEASE "C:/OBS"
+  RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "C:/OBS"
+  RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "C:/OBS"
+  RUNTIME_OUTPUT_DIRECTORY_COVERAGE "C:/OBS")

@@ -8,19 +8,16 @@
 
 namespace horus {
 
+enum class hero : unsigned {
+  ana = 0,
+  ashe,
+  pharah,
+  reaper,
+  unknown,
+};
+
 class HORUS_API eye {
 public:
-  struct state {
-    // Error for the detected hero value.
-    unsigned hero;
-
-    // Error for the detected ammo value.
-    unsigned ammo;
-
-    // Detected ammo value.
-    unsigned count;
-  };
-
   // Display and scan sizes (must be synchronized with res/horus.effect).
   static constexpr uint32_t dw = 2560;  // display width
   static constexpr uint32_t dh = 1080;  // display height
@@ -33,17 +30,11 @@ public:
   // Scan offset to display (vertical).
   static constexpr uint32_t sy = (dh - sh) / 2;  // 28
 
-  // Ammo offset and size.
-  static constexpr uint32_t ax = 320 + 1770;
-  static constexpr uint32_t ay = 889;
-  static constexpr uint32_t aw = 38;
-  static constexpr uint32_t ah = 38;
-
-  // Portrait offset and size.
-  static constexpr uint32_t px = 320 + 162;
-  static constexpr uint32_t py = 919;
-  static constexpr uint32_t pw = 38;
-  static constexpr uint32_t ph = 38;
+  // Hero portrait offset and size.
+  static constexpr uint32_t hx = 320 + 162;
+  static constexpr uint32_t hy = 919;
+  static constexpr uint32_t hw = 38;
+  static constexpr uint32_t hh = 38;
 
   // Overlay color (minimum red, maximum green, minimum blue).
   // - 0xA060A0 is a safe value
@@ -91,7 +82,7 @@ public:
   ///
   /// @return Returns the best guess.
   ///
-  state parse(uint8_t* image) noexcept;
+  std::pair<hero, double> parse(uint8_t* image) noexcept;
 
   /// Draws polygons, contours and filtered outlines from the last @ref scan call over the image.
   ///
@@ -140,12 +131,8 @@ private:
   std::array<cv::Point2f, cursor_interpolation_capacity> cursor_interpolation_;
   size_t cursor_interpolation_size_{ 1 };
 
-  cv::Mat ammo_scan_;
-  std::array<cv::Mat, 13> ammo_scans_;
-  std::array<cv::Mat, 13> ammo_masks_;
-
   cv::Mat hero_scan_;
-  std::array<cv::Mat, 3> hero_scans_;
+  std::array<cv::Mat, static_cast<unsigned>(hero::unknown)> hero_scans_;
 };
 
 }  // namespace horus

@@ -112,11 +112,11 @@ Options
   + Weapos & Abilities
     Ability 1: LSHIFT | `horus D 3`
     Ability 2: E | `horus U 3`
-    Quick Melee: TAB
+    Quick Melee: C
     Next Weapon: EMPTY
     Previous Weapon: EMPTY
   + Communication
-    Voice Line (Up): V
+    Communication Menu: V
 + Controls (Ana)
   + Reticle
     + Type: Dot

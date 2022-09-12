@@ -12,7 +12,6 @@
 #include <exception>
 #include <fstream>
 #include <memory>
-#include <random>
 #include <vector>
 
 #include <Windows.h>
@@ -32,30 +31,7 @@ class plugin {
 public:
   using clock = std::chrono::high_resolution_clock;
 
-  // Measured time between shots: 60 frames @ 75 fps
-  static constexpr std::chrono::milliseconds shot_duration{ 800 };
-
-  // Measured time between shot and error (9.0 - 32.0): 21 frames @ 75 fps
-  static constexpr std::chrono::milliseconds ammo_duration{ 280 };
-
-  // Measured time between 0 and 12: 104 frames @ 75 fps
-  static constexpr std::chrono::milliseconds reset_duration{ 1387 };
-
-  // Measured time between 0 and shot: 171 frames @ 75 fps
-  static constexpr std::chrono::milliseconds reload_duration{ 2280 };
-
-  // Time between injected clicks to simulate 8 clicks per second.
-  static constexpr std::chrono::milliseconds click_duration{ 125 };
-
-  // Random value added to time between injected clicks.
-  static constexpr std::chrono::milliseconds random_min{ -1 };
-  static constexpr std::chrono::milliseconds random_max{ 3 };
-
-  plugin(obs_source_t* context) noexcept :
-    source_(context),
-    random_distribution_(
-      std::chrono::duration_cast<clock::duration>(random_min).count(),
-      std::chrono::duration_cast<clock::duration>(random_max).count())
+  plugin(obs_source_t* context) noexcept : source_(context)
   {
     name_ = reinterpret_cast<std::uintptr_t>(this);
 
@@ -157,22 +133,13 @@ public:
         100.0f);
       obs_source_video_render(target);
       gs_ortho(
-        float(eye::ax),
-        float(eye::ax + eye::aw),
-        float(eye::ay),
-        float(eye::ay + eye::ah),
+        float(eye::hx),
+        float(eye::hx + eye::hw),
+        float(eye::hy),
+        float(eye::hy + eye::hh),
         -100.0f,
         100.0f);
-      gs_set_viewport(0, 0, eye::aw, eye::ah);
-      obs_source_video_render(target);
-      gs_ortho(
-        float(eye::px),
-        float(eye::px + eye::pw),
-        float(eye::py),
-        float(eye::py + eye::ph),
-        -100.0f,
-        100.0f);
-      gs_set_viewport(eye::aw, 0, eye::pw, eye::ph);
+      gs_set_viewport(0, 0, eye::hw, eye::hh);
       obs_source_video_render(target);
       gs_projection_pop();
       gs_texrender_end(texrender_);
@@ -183,11 +150,14 @@ public:
         mouse_.get(mouse_state_);
 
         // Determine if a target is acquired.
-        const auto ax = std::pow(std::abs(mouse_state_.mx) * 2.0f, 1.05f);
-        const auto ay = std::pow(std::abs(mouse_state_.my) * 2.0f, 1.05f);
-        const auto mx = mouse_state_.mx < 0 ? -ax : ax;
-        const auto my = mouse_state_.my < 0 ? -ay : ay;
-        const auto shoot = eye_.scan(data, mx, my);
+        auto shoot = false;
+        if (hero_ == hero::ana || hero_ == hero::ashe || hero_ == hero::reaper) {
+          const auto ax = std::pow(std::abs(mouse_state_.mx) * 2.0f, 1.05f);
+          const auto ay = std::pow(std::abs(mouse_state_.my) * 2.0f, 1.05f);
+          const auto mx = mouse_state_.mx < 0 ? -ax : ax;
+          const auto my = mouse_state_.my < 0 ? -ay : ay;
+          shoot = eye_.scan(data, mx, my);
+        }
 
 #if HORUS_SHOW_STATS
         // Measure the time it takes to decide if a target is acquired.
@@ -205,8 +175,9 @@ public:
         }
 
         // Update the ready_ value.
-        const auto state = eye_.parse(data);
-        update(tp0, state, mouse_state_.bl || injected);
+        const auto [ hero_class, hero_error ] = eye_.parse(data);
+        hero_ = hero_error < 0.5 ? hero_class : hero::unknown;
+        update(tp0, mouse_state_.bl || injected);
 
         // Handle screenshot request.
         bool screenshot_expected = true;
@@ -216,9 +187,10 @@ public:
         }
 
 #if HORUS_DRAW_SCANS
-        eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
-        //eye_.draw(data, 0x09BC2460, 0xFFFFFFFF, 0x08DE29C0, 0x2409BC60);
-        eye_.draw_reticle(data, 0x000000FF, 0x00A5E7FF);
+        if (hero_ == hero::ana || hero_ == hero::ashe || hero_ == hero::reaper) {
+          eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
+          eye_.draw_reticle(data, 0x000000FF, 0x00A5E7FF);
+        }
 #endif
 #if HORUS_SHOW_STATS
         cv::Mat si(eye::sw, eye::sh, CV_8UC4, data, eye::sw * 4);
@@ -229,13 +201,31 @@ public:
           blocked = std::chrono::duration_cast<duration>(blocked_ - tp1).count();
         }
         stats_.clear();
+        const char* hero_name = "unknown";
+        switch (hero_) {
+        case hero::ana:
+          hero_name = "ana";
+          break;
+        case hero::ashe:
+          hero_name = "ashe";
+          break;
+        case hero::pharah:
+          hero_name = "pharah";
+          break;
+        case hero::reaper:
+          hero_name = "reaper";
+          break;
+        default:
+          break;
+        }
         std::format_to(
           std::back_inserter(stats_),
-          "{:02d} fps | {:02.1f} ms | {:02d}/12 | {:1.2f} s",
+          "{:02d} fps | {:02.1f} ms | {:1.2f} s | {:1.3f} {}",
           static_cast<int>(frames_per_second_),
           average_duration_,
-          ammo_,
-          blocked);
+          blocked,
+          hero_error,
+          hero_name);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
 #endif
@@ -277,77 +267,22 @@ public:
 #endif
   }
 
-  void update(clock::time_point now, const eye::state& state, bool fire) noexcept
+  void update(clock::time_point now, bool fire) noexcept
   {
-    // Do not try to update the ammo value if the character is not ana.
-    if (state.hero > 1000) {
+    if (hero_ != hero::ana && hero_ != hero::ashe && hero_ != hero::reaper) {
       ready_ = false;
       return;
     }
-
-    // TODO: This is the Reaper section. Select hero instead!
     if (now < blocked_) {
       ready_ = false;
       return;
     }
     if (fire) {
-      blocked_ = now + click_duration;
+      blocked_ = now + std::chrono::milliseconds(125);  // 8 clicks per second
       ready_ = false;
       return;
     }
     ready_ = true;
-    return;
-
-    // Update ammo value.
-    if (state.ammo < 100) {
-      // Error is very low and very likely to be correct.
-      if (ammo_ == 1 && state.count == 0) {
-        // Value decreased from 1 to 0, block until reload is finished.
-        blocked_ = now + reload_duration;
-        if (state.ammo > 33) {
-          blocked_ -= click_duration;
-        }
-        ammo_ = state.count;
-      } else if (ammo_ < 12 && state.count == 12) {
-        // Value increased from to 12 or higher, block until reload is finished.
-        blocked_ = now + reload_duration - reset_duration;
-        if (state.ammo > 50) {
-          blocked_ -= click_duration;
-        }
-        ammo_ = state.count;
-      } else if (ammo_ == state.count + 1) {
-        // Value decreased by 1, block until the next round is ready.
-        blocked_ = now + shot_duration - click_duration;
-        ammo_ = state.count;
-      } else if (ammo_ != state.count) {
-        // Unexpected value change.
-        if (state.ammo < 50) {
-          // Error is low enough to assume an animation is in progress.
-          if (state.count == 0) {
-            // First part of the reload animation detected, block until it is likely to be finished.
-            blocked_ = now + reload_duration;
-          } else if (state.count == 12) {
-            // Second part of the reload animation detected, block until it is likely to be finished.
-            blocked_ = now + reload_duration - reset_duration;
-          } else {
-            // Insert round animation detected, block until it is likely to be finished.
-            blocked_ = now + ammo_duration / 2;
-          }
-          ammo_ = state.count;
-        }
-      }
-    }
-
-    // Update ready flag.
-    if (blocked_ < now) {
-      // Limit click rate if a mouse event was injected, received or a shot was manually fired.
-      if (fire) {
-        blocked_ = now + click_duration + clock::duration(random_distribution_(random_device_));
-      }
-      ready_ = !fire;
-    } else {
-      ready_ = false;
-    }
   }
 
   void play_sound() noexcept
@@ -378,8 +313,8 @@ public:
           //const auto ammo = image(cv::Rect(0, 0, eye::aw, eye::ah));
           //cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:02d}.png", 12 - counter), ammo);
 
-          const auto ana = image(cv::Rect(eye::aw, 0, eye::pw, eye::ph));
-          cv::imwrite(HORUS_IMAGES_DIR "/hero.png", ana);
+          const auto hero = image(cv::Rect(0, 0, eye::hw, eye::hh));
+          cv::imwrite(HORUS_IMAGES_DIR "/hero.png", hero);
 
           //const auto sr = image(cv::Rect(580, 512, 100, 38));
           //cv::imwrite(std::format(HORUS_IMAGES_DIR "/{:04d}.png", counter), sr);
@@ -434,11 +369,9 @@ private:
   mouse::state mouse_state_;
   anubis::client client_;
 
-  bool ready_ = true;
-  unsigned ammo_ = 0;
+  hero hero_ = hero::unknown;
   clock::time_point blocked_;
-  std::random_device random_device_;
-  std::uniform_int_distribution<clock::duration::rep> random_distribution_;
+  bool ready_ = true;
 
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::atomic_size_t screenshot_counter{ 0 };
@@ -520,17 +453,8 @@ static HHOOK hook = nullptr;
 
 static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
 {
-  static constexpr auto size = 255;
-  static constexpr auto name = std::string_view("Overwatch");
-  static auto text = std::string(static_cast<size_t>(size), '\0');
-
   if (wparam == WM_MBUTTONDOWN) {
-    //horus::plugin::screenshot();
-    if (const auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
-      if (std::string_view(text.data(), static_cast<std::size_t>(s)) == name) {
-        horus::plugin::screenshot();
-      }
-    }
+    horus::plugin::screenshot();
   }
 
   return CallNextHookEx(hook, code, wparam, lparam);
@@ -543,7 +467,9 @@ MODULE_EXPORT bool obs_module_load()
     return false;
   }
   horus::obs_register_source_s(&source, sizeof(source));
+#ifndef NDEBUG
   hook = SetWindowsHookEx(WH_MOUSE_LL, HookProc, nullptr, 0);
+#endif
   horus::plugin::load();
   return true;
 }

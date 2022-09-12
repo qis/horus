@@ -76,49 +76,32 @@ eye::eye()
   contours_.reserve(1024);
   polygons_.reserve(1024);
 
-  ammo_scan_ = cv::Mat(cv::Size(aw, ah), CV_8UC1);
-  for (size_t i = 0; i < ammo_scans_.size(); i++) {
-    ammo_scans_[i] = cv::Mat(cv::Size(aw, ah), CV_8UC1);
-    ammo_masks_[i] = cv::Mat(cv::Size(aw, ah), CV_8UC1);
-    auto scan = cv::imread(std::format(HORUS_DATA_DIR "/ammo/{:02d}.png", i), cv::IMREAD_UNCHANGED);
-    assert(scan.cols == aw);
-    assert(scan.rows == ah);
-    assert(scan.channels() == 4);
-    cv::cvtColor(scan, ammo_scans_[i], cv::COLOR_BGRA2GRAY);
-    cv::threshold(ammo_scans_[i], ammo_masks_[i], 0x33, 0xFF, cv::THRESH_BINARY);
+  hero_scan_ = cv::Mat(cv::Size(hw, hh), CV_8UC1);
+  for (auto& e : hero_scans_) {
+    e = cv::Mat(cv::Size(hw, hh), CV_8UC1);
   }
 
-  hero_scan_ = cv::Mat(cv::Size(pw, ph), CV_8UC1);
-  hero_scans_[0] = cv::Mat(cv::Size(pw, ph), CV_8UC1);
-  hero_scans_[1] = cv::Mat(cv::Size(pw, ph), CV_8UC1);
-  hero_scans_[2] = cv::Mat(cv::Size(pw, ph), CV_8UC1);
-
   if (auto hero = cv::imread(HORUS_DATA_DIR "/heroes/ana.png", cv::IMREAD_UNCHANGED); hero.size) {
-    assert(hero.cols == pw);
-    assert(hero.rows == ph);
-    assert(hero.channels() == 4);
-    cv::cvtColor(hero, hero_scans_[0], cv::COLOR_BGRA2GRAY);
+    cv::cvtColor(hero, hero_scans_[static_cast<unsigned>(hero::ana)], cv::COLOR_BGRA2GRAY);
   }
 
   if (auto hero = cv::imread(HORUS_DATA_DIR "/heroes/ashe.png", cv::IMREAD_UNCHANGED); hero.size) {
-    assert(hero.cols == pw);
-    assert(hero.rows == ph);
-    assert(hero.channels() == 4);
-    cv::cvtColor(hero, hero_scans_[1], cv::COLOR_BGRA2GRAY);
+    cv::cvtColor(hero, hero_scans_[static_cast<unsigned>(hero::ashe)], cv::COLOR_BGRA2GRAY);
+  }
+
+  if (auto hero = cv::imread(HORUS_DATA_DIR "/heroes/pharah.png", cv::IMREAD_UNCHANGED); hero.size) {
+    cv::cvtColor(hero, hero_scans_[static_cast<unsigned>(hero::pharah)], cv::COLOR_BGRA2GRAY);
   }
 
   if (auto hero = cv::imread(HORUS_DATA_DIR "/heroes/reaper.png", cv::IMREAD_UNCHANGED); hero.size) {
-    assert(hero.cols == pw);
-    assert(hero.rows == ph);
-    assert(hero.channels() == 4);
-    cv::cvtColor(hero, hero_scans_[2], cv::COLOR_BGRA2GRAY);
+    cv::cvtColor(hero, hero_scans_[static_cast<unsigned>(hero::reaper)], cv::COLOR_BGRA2GRAY);
   }
 }
 
 bool eye::scan(const uint8_t* image, float mx, float my) noexcept
 {
   // Vertical iteration range.
-  const auto range = tbb::blocked_range<size_t>(ah + 1, sh - 1, 64);
+  const auto range = tbb::blocked_range<size_t>(hh + 1, sh - 1, 64);
 
   // Draw outlines.
   std::memset(outlines_.data(), 0, sw * sh);
@@ -313,30 +296,24 @@ bool eye::scan(const uint8_t* image, float mx, float my) noexcept
   return false;
 }
 
-eye::state eye::parse(uint8_t* image) noexcept
+std::pair<hero, double> eye::parse(uint8_t* image) noexcept
 {
   constexpr auto norm_type = cv::NORM_INF;
 
-  auto hero = std::numeric_limits<double>::max();
-  auto ammo = std::numeric_limits<double>::max();
-  auto count = unsigned(0);
+  auto hero_class = hero::unknown;
+  auto hero_error = std::numeric_limits<double>::max();
 
   auto src = cv::Mat(sw, sh, CV_8UC4, image, eye::sw * 4);
-  cv::cvtColor(src(cv::Rect(0, 0, aw, ah)), ammo_scan_, cv::COLOR_RGBA2GRAY);
-
-  for (uint8_t i = 0, max = static_cast<uint8_t>(ammo_scans_.size()); i < max; i++) {
-    if (const auto a = cv::norm(ammo_scan_, ammo_scans_[i], norm_type, ammo_masks_[i]); a < ammo) {
-      ammo = a;
-      count = i;
+  cv::cvtColor(src(cv::Rect(0, 0, hw, hh)), hero_scan_, cv::COLOR_RGBA2GRAY);
+  for (size_t i = 0; i < hero_scans_.size(); i++) {
+    const auto error = cv::norm(hero_scan_, hero_scans_[i]);
+    if (error < hero_error) {
+      hero_class = static_cast<hero>(i);
+      hero_error = error;
     }
   }
 
-  cv::cvtColor(src(cv::Rect(aw, 0, pw, ph)), hero_scan_, cv::COLOR_RGBA2GRAY);
-  for (const auto& e : hero_scans_) {
-    hero = std::min(hero, cv::norm(hero_scan_, e));
-  }
-
-  return { static_cast<unsigned>(hero / aw * ah), static_cast<unsigned>(ammo / aw * ah), count };
+  return std::make_pair(hero_class, hero_error / (hw * hh));
 }
 
 void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept

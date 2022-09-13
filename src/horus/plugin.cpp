@@ -105,6 +105,7 @@ public:
     const auto target = obs_filter_get_target(source_);
     if (!target) {
       obs_source_skip_video_filter(source_);
+      hero_ = hero::unknown;
       return;
     }
 
@@ -112,6 +113,7 @@ public:
     const auto cy = obs_source_get_height(target);
     if (!cx || !cy) {
       obs_source_skip_video_filter(source_);
+      hero_ = hero::unknown;
       return;
     }
 
@@ -269,6 +271,11 @@ public:
 
   void update(clock::time_point now, bool fire) noexcept
   {
+    if (hero_ == hero::pharah || hero_ == hero::unknown) {
+      update_pharah(now);
+      ready_ = false;
+      return;
+    }
     if (hero_ != hero::ana && hero_ != hero::ashe && hero_ != hero::reaper) {
       ready_ = false;
       return;
@@ -285,12 +292,50 @@ public:
     ready_ = true;
   }
 
+  bool pharah_enabled_ = false;
+  bool pharah_br_state_ = false;
+  clock::time_point pharah_br_state_update_ = clock::now();
+
+  void update_pharah(clock::time_point now) noexcept
+  {
+    //if (control_state.load(std::memory_order_relaxed)) {
+    //  if (pharah_enabled_) {
+    //    client_.mask(anubis::button::middle, std::chrono::seconds(0));
+    //    pharah_enabled_ = false;
+    //  }
+    //  return;
+    //}
+
+    if (mouse_state_.br) {
+      if (!pharah_br_state_) {
+        client_.mask(anubis::button::middle, std::chrono::seconds(2));
+        pharah_br_state_update_ = now;
+        pharah_br_state_ = true;
+      } else if (now - pharah_br_state_update_ > std::chrono::seconds(1)) {
+        client_.mask(anubis::button::middle, std::chrono::seconds(2));
+        pharah_br_state_update_ = now;
+      }
+    } else {
+      if (pharah_br_state_) {
+        play_sound();
+        client_.mask(anubis::button::middle, std::chrono::seconds(0));
+        pharah_br_state_update_ = now;
+        pharah_br_state_ = false;
+      }
+    }
+  }
+
   void play_sound() noexcept
   {
     if (audio_device_) {
       SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
       SDL_PauseAudioDevice(audio_device_, 0);
     }
+  }
+
+  static void control(bool down) noexcept
+  {
+    control_state.store(down, std::memory_order_release);
   }
 
   static void screenshot() noexcept
@@ -371,8 +416,9 @@ private:
 
   hero hero_ = hero::unknown;
   clock::time_point blocked_;
-  bool ready_ = true;
+  bool ready_{ true };
 
+  static inline std::atomic_bool control_state{ false };
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::atomic_size_t screenshot_counter{ 0 };
   static inline std::shared_ptr<boost::asio::thread_pool> screenshot_thread_pool;
@@ -387,8 +433,8 @@ private:
   clock::time_point frame_time_point_{ clock::now() };
   std::chrono::nanoseconds processing_duration_{ 0 };
   std::size_t frame_counter_{ 0 };
-  float frames_per_second_ = 0.0f;
-  float average_duration_ = 0.0f;
+  float frames_per_second_{ 0.0f };
+  float average_duration_{ 0.0f };
 #endif
 };
 
@@ -449,15 +495,34 @@ static obs_source_info source = {
   .video_render = horus_render,
 };
 
-static HHOOK hook = nullptr;
+static HHOOK keyboard_hook = nullptr;
 
-static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
+static LRESULT CALLBACK KeyboardHookProc(int code, WPARAM wparam, LPARAM lparam)
+{
+  static constexpr auto size = 255;
+  static constexpr auto name = std::string_view("Overwatch");
+  static auto text = std::string(static_cast<size_t>(size), '\0');
+
+  if (const auto ks = reinterpret_cast<LPKBDLLHOOKSTRUCT>(lparam); ks->vkCode == VK_LCONTROL) {
+    if (wparam == WM_KEYDOWN || wparam == WM_KEYUP) {
+      if (const auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
+        if (std::string_view(text.data(), static_cast<std::size_t>(s)) == name) {
+          horus::plugin::control(wparam == WM_KEYDOWN);
+        }
+      }
+    }
+  }
+  return CallNextHookEx(keyboard_hook, code, wparam, lparam);
+}
+
+static HHOOK mouse_hook = nullptr;
+
+static LRESULT CALLBACK MouseHookProc(int code, WPARAM wparam, LPARAM lparam)
 {
   if (wparam == WM_MBUTTONDOWN) {
     horus::plugin::screenshot();
   }
-
-  return CallNextHookEx(hook, code, wparam, lparam);
+  return CallNextHookEx(mouse_hook, code, wparam, lparam);
 }
 
 MODULE_EXPORT bool obs_module_load()
@@ -467,8 +532,9 @@ MODULE_EXPORT bool obs_module_load()
     return false;
   }
   horus::obs_register_source_s(&source, sizeof(source));
+  keyboard_hook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardHookProc, nullptr, 0);
 #ifndef NDEBUG
-  hook = SetWindowsHookEx(WH_MOUSE_LL, HookProc, nullptr, 0);
+  mouse_hook = SetWindowsHookEx(WH_MOUSE_LL, MouseHookProc, nullptr, 0);
 #endif
   horus::plugin::load();
   return true;
@@ -476,8 +542,11 @@ MODULE_EXPORT bool obs_module_load()
 
 MODULE_EXPORT void obs_module_unload()
 {
-  if (hook) {
-    UnhookWindowsHookEx(hook);
+  if (mouse_hook) {
+    UnhookWindowsHookEx(mouse_hook);
+  }
+  if (keyboard_hook) {
+    UnhookWindowsHookEx(keyboard_hook);
   }
   horus::plugin::unload();
 }

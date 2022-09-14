@@ -133,6 +133,8 @@ Options
     Equip Weapon 2: 2 | SCROLL WHEEL DOWN
 + Controls (Pharah)
   + Weapos & Abilities
+    Ability 1: LSHIFT | EMPTY
+    Ability 2: E | EMPTY
     Secondary Fire: EMPTY
 + Controls (Reaper)
   + Reticle

@@ -31,6 +31,17 @@ class plugin {
 public:
   using clock = std::chrono::high_resolution_clock;
 
+  static constexpr std::chrono::milliseconds pharah_boost_duration{ 1400 };
+  static constexpr std::chrono::milliseconds pharah_flight_duration{ 350 };
+  static constexpr std::chrono::milliseconds pharah_fall_duration{ 450 };
+  static constexpr std::chrono::milliseconds pharah_skip_delta{ 50 };
+  static_assert(pharah_skip_delta < pharah_flight_duration);
+
+  static inline std::atomic_bool e_state{ false };
+  static inline std::atomic_bool q_state{ false };
+  static inline std::atomic_bool shift_state{ false };
+  static inline std::atomic_bool control_state{ false };
+
   plugin(obs_source_t* context) noexcept : source_(context)
   {
     name_ = reinterpret_cast<std::uintptr_t>(this);
@@ -168,12 +179,14 @@ public:
 
         // Press left mouse button.
         auto injected = false;
-        if (shoot && ready_ && !mouse_state_.bl && mouse_state_.br != mouse_state_.bu) {
-          client_.mask(anubis::button::left, std::chrono::milliseconds(7));
-          injected = true;
+        if (hero_ == hero::ana || hero_ == hero::ashe || hero_ == hero::reaper) {
+          if (shoot && ready_ && !mouse_state_.bl && mouse_state_.br != mouse_state_.bu) {
+            client_.mask(anubis::button::left, std::chrono::milliseconds(7));
+            injected = true;
 #if HORUS_PLAY_SOUND
-          play_sound();
+            play_sound();
 #endif
+          }
         }
 
         // Update the ready_ value.
@@ -222,7 +235,7 @@ public:
         }
         std::format_to(
           std::back_inserter(stats_),
-          "{:02d} fps | {:02.1f} ms | {:1.2f} s | {:1.3f} {}",
+          "{:02d} fps | {:02.1f} ms | {:1.2f} s | {:1.3f} | {}",
           static_cast<int>(frames_per_second_),
           average_duration_,
           blocked,
@@ -271,7 +284,12 @@ public:
 
   void update(clock::time_point now, bool fire) noexcept
   {
-    if (hero_ == hero::pharah || hero_ == hero::unknown) {
+    if (hero_ == hero::pharah) {
+      pharah_enabled_ = true;
+    } else if (hero_ != hero::unknown) {
+      pharah_enabled_ = false;
+    }
+    if (pharah_enabled_) {
       update_pharah(now);
       ready_ = false;
       return;
@@ -292,38 +310,229 @@ public:
     ready_ = true;
   }
 
+  enum class pharah_state {
+    disabled,
+    rocket_button_pressed,
+    flight_button_pressed,
+    flight_button_released,
+  };
+
   bool pharah_enabled_ = false;
-  bool pharah_br_state_ = false;
-  clock::time_point pharah_br_state_update_ = clock::now();
+  clock::time_point pharah_update_ = clock::now();
+  pharah_state pharah_state_ = pharah_state::disabled;
+  clock::time_point pharah_boost_time_point_ = clock::now();
+  bool pharah_boost_ = false;
+  bool pharah_skip_ = false;
 
   void update_pharah(clock::time_point now) noexcept
   {
-    //if (control_state.load(std::memory_order_relaxed)) {
-    //  if (pharah_enabled_) {
-    //    client_.mask(anubis::button::middle, std::chrono::seconds(0));
-    //    pharah_enabled_ = false;
-    //  }
-    //  return;
-    //}
-
-    if (mouse_state_.br) {
-      if (!pharah_br_state_) {
-        client_.mask(anubis::button::middle, std::chrono::seconds(2));
-        pharah_br_state_update_ = now;
-        pharah_br_state_ = true;
-      } else if (now - pharah_br_state_update_ > std::chrono::seconds(1)) {
-        client_.mask(anubis::button::middle, std::chrono::seconds(2));
-        pharah_br_state_update_ = now;
-      }
-    } else {
-      if (pharah_br_state_) {
-        play_sound();
+    // TODO: Do not block right click during boost.
+    // 
+    // Handle control and Q keys.
+    if (control_state.load(std::memory_order_relaxed) || q_state.load(std::memory_order_relaxed)) {
+      // Unset middle mouse button mask when control key is pressed.
+      if (pharah_state_ != pharah_state::disabled) {
         client_.mask(anubis::button::middle, std::chrono::seconds(0));
-        pharah_br_state_update_ = now;
-        pharah_br_state_ = false;
+        pharah_state_ = pharah_state::disabled;
+      }
+      return;
+    }
+
+    // Handle E key.
+    if (e_state.load(std::memory_order_relaxed)) {
+      pharah_state_ = pharah_state::flight_button_released;
+      pharah_update_ = now - pharah_flight_duration - pharah_fall_duration;
+      return;
+    }
+
+    // Handle shift key.
+    if (shift_state.load(std::memory_order_relaxed)) {
+      // Release middle mouse button until pharah_boost_duration time passes.
+      if (pharah_state_ != pharah_state::rocket_button_pressed) {
+        client_.mask(anubis::button::middle, std::chrono::seconds(0));
+        pharah_state_ = pharah_state::rocket_button_pressed;
+        pharah_boost_time_point_ = now;
+        pharah_boost_ = true;
+        pharah_update_ = now;
+      }
+      return;
+    }
+
+    // Wait for boost to finish, then press middle mouse button.
+    if (pharah_state_ == pharah_state::rocket_button_pressed) {
+      if (mouse_state_.br || now > pharah_update_ + pharah_boost_duration) {
+        client_.mask(anubis::button::middle, pharah_flight_duration);
+        pharah_state_ = pharah_state::flight_button_released;
+        pharah_update_ = now;
+        return;
       }
     }
+
+    // Handle right mouse button.
+    if (mouse_state_.br) {
+      // Keep middle mouse button mask set while right mouse button is pressed.
+      if (pharah_state_ != pharah_state::flight_button_pressed) {
+        // Set middle mouse button mask while right mouse button is pressed.
+        client_.mask(anubis::button::middle, pharah_flight_duration);
+        pharah_state_ = pharah_state::flight_button_pressed;
+        pharah_update_ = now;
+      } else if (now > pharah_update_ + pharah_flight_duration / 2) {
+        // Update middle mouse button mask timeout.
+        client_.mask(anubis::button::middle, pharah_flight_duration);
+        pharah_update_ = now;
+      }
+      return;
+    }
+
+    // Do nothing if flight is still disabled.
+    if (pharah_state_ == pharah_state::disabled) {
+      return;
+    }
+
+    // Update middle mouse button mask timeout when right mouse button is released.
+    if (pharah_state_ == pharah_state::flight_button_pressed) {
+      client_.mask(anubis::button::middle, std::chrono::seconds(0));
+      pharah_state_ = pharah_state::flight_button_released;
+      pharah_update_ = now - pharah_flight_duration;
+      return;
+    }
+
+    assert(pharah_state_ == pharah_state::flight_button_released);
+
+    // Limit automatic flight duration to 10 seconds.
+    if (pharah_boost_ && now > pharah_boost_time_point_ + std::chrono::seconds(10)) {
+      client_.mask(anubis::button::middle, std::chrono::seconds(0));
+      pharah_state_ = pharah_state::disabled;
+      pharah_boost_ = false;
+      return;
+    }
+
+    // Handle up/down buttons.
+    if (mouse_state_.bu || mouse_state_.bd) {
+      pharah_skip_ = true;
+    }
+
+    // Update middle mouse button mask timeout.
+    auto update_duration = pharah_flight_duration + pharah_fall_duration;
+    if (pharah_skip_) {
+      update_duration += pharah_skip_delta;
+    }
+    if (now > pharah_update_ + update_duration) {
+      if (pharah_skip_) {
+        client_.mask(anubis::button::middle, pharah_flight_duration - pharah_skip_delta);
+      } else {
+        client_.mask(anubis::button::middle, pharah_flight_duration);
+      }
+      pharah_update_ = now;
+      pharah_skip_ = false;
+    }
   }
+
+  /*
+  void update_pharah(clock::time_point now) noexcept
+  {
+    // TODO: Do not block right click during boost.
+    // 
+    // Handle control and Q keys.
+    if (control_state.load(std::memory_order_relaxed) || q_state.load(std::memory_order_relaxed)) {
+      // Unset middle mouse button mask when control key is pressed.
+      if (pharah_state_ != pharah_state::disabled) {
+        client_.mask(anubis::button::middle, std::chrono::seconds(0));
+        pharah_state_ = pharah_state::disabled;
+      }
+      return;
+    }
+
+    // Handle E key.
+    if (e_state.load(std::memory_order_relaxed)) {
+      pharah_state_ = pharah_state::flight_button_released;
+      pharah_update_ = now - pharah_flight_duration - pharah_fall_duration;
+      return;
+    }
+
+    // Handle shift key.
+    if (shift_state.load(std::memory_order_relaxed)) {
+      // Release middle mouse button until pharah_boost_duration time passes.
+      if (pharah_state_ != pharah_state::rocket_button_pressed) {
+        client_.mask(anubis::button::middle, std::chrono::seconds(0));
+        pharah_state_ = pharah_state::rocket_button_pressed;
+        pharah_boost_time_point_ = now;
+        pharah_boost_ = true;
+        pharah_update_ = now;
+      }
+      return;
+    }
+
+    // Wait for boost to finish, then press middle mouse button.
+    if (pharah_state_ == pharah_state::rocket_button_pressed) {
+      if (mouse_state_.br || now > pharah_update_ + pharah_boost_duration) {
+        client_.mask(anubis::button::middle, pharah_flight_duration);
+        pharah_state_ = pharah_state::flight_button_released;
+        pharah_update_ = now;
+        return;
+      }
+    }
+
+    // Handle right mouse button.
+    if (mouse_state_.br) {
+      // Keep middle mouse button mask set while right mouse button is pressed.
+      if (pharah_state_ != pharah_state::flight_button_pressed) {
+        // Set middle mouse button mask while right mouse button is pressed.
+        client_.mask(anubis::button::middle, pharah_flight_duration);
+        pharah_state_ = pharah_state::flight_button_pressed;
+        pharah_update_ = now;
+      } else if (now > pharah_update_ + pharah_flight_duration / 2) {
+        // Update middle mouse button mask timeout.
+        client_.mask(anubis::button::middle, pharah_flight_duration);
+        pharah_update_ = now;
+      }
+      return;
+    }
+
+    // Do nothing if flight is still disabled.
+    if (pharah_state_ == pharah_state::disabled) {
+      return;
+    }
+
+    // Update middle mouse button mask timeout when right mouse button is released.
+    if (pharah_state_ == pharah_state::flight_button_pressed) {
+      client_.mask(anubis::button::middle, std::chrono::seconds(0));
+      pharah_state_ = pharah_state::flight_button_released;
+      pharah_update_ = now - pharah_flight_duration;
+      return;
+    }
+
+    assert(pharah_state_ == pharah_state::flight_button_released);
+
+    // Limit automatic flight duration to 10 seconds.
+    if (pharah_boost_ && now > pharah_boost_time_point_ + std::chrono::seconds(10)) {
+      client_.mask(anubis::button::middle, std::chrono::seconds(0));
+      pharah_state_ = pharah_state::disabled;
+      pharah_boost_ = false;
+      return;
+    }
+
+    // Handle up/down buttons.
+    if (mouse_state_.bu || mouse_state_.bd) {
+      pharah_skip_ = true;
+    }
+
+    // Update middle mouse button mask timeout.
+    auto update_duration = pharah_flight_duration + pharah_fall_duration;
+    if (pharah_skip_) {
+      update_duration += pharah_skip_delta;
+    }
+    if (now > pharah_update_ + update_duration) {
+      if (pharah_skip_) {
+        client_.mask(anubis::button::middle, pharah_flight_duration - pharah_skip_delta);
+      } else {
+        client_.mask(anubis::button::middle, pharah_flight_duration);
+      }
+      pharah_update_ = now;
+      pharah_skip_ = false;
+    }
+  }
+  */
 
   void play_sound() noexcept
   {
@@ -331,11 +540,6 @@ public:
       SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
       SDL_PauseAudioDevice(audio_device_, 0);
     }
-  }
-
-  static void control(bool down) noexcept
-  {
-    control_state.store(down, std::memory_order_release);
   }
 
   static void screenshot() noexcept
@@ -418,7 +622,6 @@ private:
   clock::time_point blocked_;
   bool ready_{ true };
 
-  static inline std::atomic_bool control_state{ false };
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::atomic_size_t screenshot_counter{ 0 };
   static inline std::shared_ptr<boost::asio::thread_pool> screenshot_thread_pool;
@@ -502,12 +705,32 @@ static LRESULT CALLBACK KeyboardHookProc(int code, WPARAM wparam, LPARAM lparam)
   static constexpr auto size = 255;
   static constexpr auto name = std::string_view("Overwatch");
   static auto text = std::string(static_cast<size_t>(size), '\0');
+  static auto alt_state = false;
 
-  if (const auto ks = reinterpret_cast<LPKBDLLHOOKSTRUCT>(lparam); ks->vkCode == VK_LCONTROL) {
-    if (wparam == WM_KEYDOWN || wparam == WM_KEYUP) {
+  if (wparam == WM_KEYDOWN || wparam == WM_KEYUP) {
+    const auto ks = reinterpret_cast<LPKBDLLHOOKSTRUCT>(lparam);
+    if (ks->vkCode == VK_LMENU) {
+      alt_state = wparam == WM_KEYDOWN;
+    } else if (alt_state) {
+      return CallNextHookEx(keyboard_hook, code, wparam, lparam);
+    }
+    if (ks->vkCode == 'E' || ks->vkCode == 'Q' || ks->vkCode == VK_LCONTROL || ks->vkCode == VK_LSHIFT) {
       if (const auto s = GetWindowText(GetForegroundWindow(), text.data(), size); s > 0) {
         if (std::string_view(text.data(), static_cast<std::size_t>(s)) == name) {
-          horus::plugin::control(wparam == WM_KEYDOWN);
+          switch (ks->vkCode) {
+          case 'E':
+            horus::plugin::e_state.store(wparam == WM_KEYDOWN, std::memory_order_release);
+            break;
+          case 'Q':
+            horus::plugin::q_state.store(wparam == WM_KEYDOWN, std::memory_order_release);
+            break;
+          case VK_LCONTROL:
+            horus::plugin::control_state.store(wparam == WM_KEYDOWN, std::memory_order_release);
+            break;
+          case VK_LSHIFT:
+            horus::plugin::shift_state.store(wparam == WM_KEYDOWN, std::memory_order_release);
+            break;
+          }
         }
       }
     }

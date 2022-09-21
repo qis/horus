@@ -1,9 +1,8 @@
+#include <horus/hero.hpp>
+#include <horus/log.hpp>
+#include <horus/obs.hpp>
 #include <boost/asio/post.hpp>
 #include <boost/asio/thread_pool.hpp>
-#include <horus/eye.hpp>
-#include <horus/log.hpp>
-#include <horus/mouse.hpp>
-#include <horus/obs.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <rock/client.hpp>
@@ -21,9 +20,6 @@
 #define HORUS_CONFIG_TXT "C:/OBS/horus.txt"
 #define HORUS_EFFECT_DIR "C:/OBS/horus/res"
 #define HORUS_IMAGES_DIR "C:/OBS/img"
-#define HORUS_DRAW_SCANS 1
-#define HORUS_SHOW_STATS 1
-#define HORUS_PLAY_SOUND 1
 
 namespace horus {
 
@@ -117,7 +113,7 @@ public:
     const auto target = obs_filter_get_target(source_);
     if (!target) {
       obs_source_skip_video_filter(source_);
-      hero_ = hero::unknown;
+      hero_ = hero::type::none;
       return;
     }
 
@@ -125,7 +121,7 @@ public:
     const auto cy = obs_source_get_height(target);
     if (!cx || !cy) {
       obs_source_skip_video_filter(source_);
-      hero_ = hero::unknown;
+      hero_ = hero::type::none;
       return;
     }
 
@@ -160,40 +156,18 @@ public:
 
       gs_stage_texture(stagesurf_, gs_texrender_get_texture(texrender_));
       if (gs_stagesurface_map(stagesurf_, &data, &line)) {
-        // Get relative mouse travel distance since last call.
-        mouse_.get(mouse_state_);
+        // Get mouse state.
+        hid_.get(mouse_);
 
-        // Determine if a target is acquired.
-        auto shoot = false;
-        if (hero_ == hero::ana || hero_ == hero::ashe || hero_ == hero::reaper) {
-          const auto ax = std::pow(std::abs(mouse_state_.mx) * 1.5f, 1.05f);
-          const auto ay = std::pow(std::abs(mouse_state_.my) * 1.5f, 1.05f);
-          const auto mx = mouse_state_.mx < 0 ? -ax : ax;
-          const auto my = mouse_state_.my < 0 ? -ay : ay;
-          shoot = eye_.scan(data, mx, my);
-        }
+        // Scan image with current hero.
+        const auto draw = hitscan_.scan(data, mouse_);
 
-#if HORUS_SHOW_STATS
-        // Measure the time it takes to decide if a target is acquired.
+        // Measure scan duration.
         tp1 = clock::now();
-#endif
 
-        // Press left mouse button.
-        auto injected = false;
-        if (hero_ == hero::ana || hero_ == hero::ashe || hero_ == hero::reaper) {
-          if (shoot && ready_ && !mouse_state_.bl && mouse_state_.br != mouse_state_.bu) {
-            client_.mask(rock::button::left, std::chrono::milliseconds(7));
-            injected = true;
-#if HORUS_PLAY_SOUND
-            play_sound();
-#endif
-          }
-        }
-
-        // Update the ready_ value.
-        const auto [hero_class, hero_error] = eye_.parse(data);
-        hero_ = hero_error < 0.5 ? hero_class : hero::unknown;
-        update(tp0, mouse_state_.bl || injected);
+        // Determine current hero.
+        const auto [type, error] = eye_.type(data);
+        //hero_ = error < 0.5 ? type : hero::type::none;
 
         // Handle screenshot request.
         bool screenshot_expected = true;
@@ -202,13 +176,13 @@ public:
           play_sound();
         }
 
-#if HORUS_DRAW_SCANS
-        if (hero_ == hero::ana || hero_ == hero::ashe || hero_ == hero::reaper) {
+        // Draw overlay.
+        if (draw) {
           eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
           eye_.draw_reticle(data, 0x000000FF, 0x00A5E7FF);
         }
-#endif
-#if HORUS_SHOW_STATS
+
+        // Draw information.
         cv::Mat si(eye::sw, eye::sh, CV_8UC4, data, eye::sw * 4);
         const auto tpos = cv::Point(10, eye::sh - 10);
         auto blocked = 0.0;
@@ -217,39 +191,21 @@ public:
           blocked = std::chrono::duration_cast<duration>(blocked_ - tp1).count();
         }
         stats_.clear();
-        const char* hero_name = "unknown";
-        switch (hero_) {
-        case hero::ana:
-          hero_name = "ana";
-          break;
-        case hero::ashe:
-          hero_name = "ashe";
-          break;
-        case hero::pharah:
-          hero_name = "pharah";
-          break;
-        case hero::reaper:
-          hero_name = "reaper";
-          break;
-        default:
-          break;
-        }
         std::format_to(
           std::back_inserter(stats_),
           "{:02d} fps | {:02.1f} ms | {:1.2f} s | {:1.3f} | {}",
           static_cast<int>(frames_per_second_),
           average_duration_,
           blocked,
-          hero_error,
-          hero_name);
+          error,
+          hero::name(type));
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
         cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
-#endif
-#if HORUS_DRAW_SCANS || HORUS_SHOW_STATS
+
+        // Release image.
         gs_texture_set_image(scan_, data, eye::sw * 4, false);
-        overlay = true;
-#endif
         gs_stagesurface_unmap(stagesurf_);
+        overlay = true;
       }
     }
     gs_blend_state_pop();
@@ -266,7 +222,6 @@ public:
       obs_source_skip_video_filter(source_);
     }
 
-#if HORUS_SHOW_STATS
     frame_counter_++;
     const auto tp2 = clock::now();
     processing_duration_ += tp1 - tp0;
@@ -280,28 +235,27 @@ public:
       frame_time_point_ = tp0;
       frame_counter_ = 0;
     }
-#endif
   }
 
   void update(clock::time_point now, bool fire) noexcept
   {
-    if (hero_ == hero::pharah) {
+    if (hero_ == hero::type::pharah) {
       pharah_enabled_ = true;
-    } else if (hero_ != hero::unknown) {
+    } else if (hero_ != hero::type::none) {
       pharah_enabled_ = false;
     }
     if (pharah_enabled_) {
       update_pharah(now);
-      input_e_state_ = input_e_state.load(std::memory_order_relaxed);
-      input_q_state_ = input_q_state.load(std::memory_order_relaxed);
-      input_space_state_ = input_space_state.load(std::memory_order_relaxed);
-      input_shift_state_ = input_shift_state.load(std::memory_order_relaxed);
-      input_control_state_ = input_control_state.load(std::memory_order_relaxed);
-      input_rmb_state_ = mouse_state_.br;
+      //input_e_state_ = input_e_state.load(std::memory_order_relaxed);
+      //input_q_state_ = input_q_state.load(std::memory_order_relaxed);
+      //input_space_state_ = input_space_state.load(std::memory_order_relaxed);
+      //input_shift_state_ = input_shift_state.load(std::memory_order_relaxed);
+      //input_control_state_ = input_control_state.load(std::memory_order_relaxed);
+      //input_rmb_state_ = mouse_state_.br;
       ready_ = false;
       return;
     }
-    if (hero_ != hero::ana && hero_ != hero::ashe && hero_ != hero::reaper) {
+    if (hero_ != hero::type::ana && hero_ != hero::type::ashe && hero_ != hero::type::reaper) {
       ready_ = false;
       return;
     }
@@ -642,18 +596,12 @@ private:
   std::uintptr_t name_{ 0 };
 
   eye eye_;
-  mouse mouse_;
-  mouse::state mouse_state_;
+  hid hid_;
+  hid::mouse mouse_;
   rock::client client_;
+  hero::hitscan hitscan_{ eye_, client_ };
 
-  bool input_e_state_{ false };
-  bool input_q_state_{ false };
-  bool input_space_state_{ false };
-  bool input_shift_state_{ false };
-  bool input_control_state_{ false };
-  bool input_rmb_state_{ false };
-
-  hero hero_ = hero::unknown;
+  hero::type hero_ = hero::type::none;
   clock::time_point blocked_;
   bool ready_{ true };
 
@@ -666,14 +614,12 @@ private:
   SDL_AudioSpec audio_spec_{};
   SDL_AudioDeviceID audio_device_{ 0 };
 
-#if HORUS_SHOW_STATS
   std::string stats_;
   clock::time_point frame_time_point_{ clock::now() };
   std::chrono::nanoseconds processing_duration_{ 0 };
   std::size_t frame_counter_{ 0 };
   float frames_per_second_{ 0.0f };
   float average_duration_{ 0.0f };
-#endif
 };
 
 }  // namespace horus

@@ -7,7 +7,7 @@ ConstructorInitializerIndentWidth: 2
 ContinuationIndentWidth: 2
 IndentPPDirectives: AfterHash
 IndentRequiresClause: true
-LambdaBodyIndentation: OuterScope
+LambdaBodyIndentation: Signature
 
 # Alignment
 AlignAfterOpenBracket: AlwaysBreak
@@ -77,7 +77,7 @@ IncludeCategories:
     Priority: 1
 
   # Project Headers
-  - Regex: '^<ice/'
+  - Regex: '^<horus/'
     Priority: 2
     SortPriority: 0
 

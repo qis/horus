@@ -1,4 +1,4 @@
-#include "mouse.hpp"
+#include "hid.hpp"
 #include <horus/log.hpp>
 
 #pragma comment(lib, "dinput8.lib")
@@ -6,7 +6,7 @@
 
 namespace horus {
 
-mouse::mouse() noexcept
+hid::hid() noexcept
 {
   struct enum_windows_data {
     DWORD pid = GetCurrentProcessId();
@@ -67,7 +67,7 @@ mouse::mouse() noexcept
   }
 }
 
-mouse::~mouse()
+hid::~hid()
 {
   if (device_) {
     device_->Unacquire();
@@ -78,22 +78,33 @@ mouse::~mouse()
   }
 }
 
-bool mouse::get(state& state) noexcept
+bool hid::get(mouse& state) noexcept
 {
   const auto hr = device_->GetDeviceState(sizeof(state_), &state_);
   if (SUCCEEDED(hr)) {
-    state.mx = state_.lX;
-    state.my = state_.lY;
-    state.bl = state_.rgbButtons[0] != 0;
-    state.br = state_.rgbButtons[1] != 0;
-    state.bm = state_.rgbButtons[2] != 0;
-    state.bd = state_.rgbButtons[3] != 0;
-    state.bu = state_.rgbButtons[4] != 0;
+    state.buttons = 0;
+    if (state_.rgbButtons[0] != 0) {
+      state.buttons |= rock::button::left;
+    }
+    if (state_.rgbButtons[1] != 0) {
+      state.buttons |= rock::button::right;
+    }
+    if (state_.rgbButtons[2] != 0) {
+      state.buttons |= rock::button::middle;
+    }
+    if (state_.rgbButtons[3] != 0) {
+      state.buttons |= rock::button::down;
+    }
+    if (state_.rgbButtons[4] != 0) {
+      state.buttons |= rock::button::up;
+    }
+    state.dx = state_.lX;
+    state.dy = state_.lY;
     return true;
   }
   device_->Acquire();
-  state.mx = 0;
-  state.my = 0;
+  state.dx = 0;
+  state.dy = 0;
   return false;
 }
 

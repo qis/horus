@@ -1,5 +1,6 @@
 #pragma once
 #include "config.hpp"
+#include <horus/hero/base.hpp>
 #include <opencv2/imgproc.hpp>
 #include <array>
 #include <chrono>
@@ -7,14 +8,6 @@
 #include <cstdint>
 
 namespace horus {
-
-enum class hero : unsigned {
-  ana = 0,
-  ashe,
-  pharah,
-  reaper,
-  unknown,
-};
 
 class HORUS_API eye {
 public:
@@ -72,17 +65,17 @@ public:
   /// @param mx DirectInput mouse movement relative to the last frame (horizontal).
   /// @param my DirectInput mouse movement relative to the last frame (vertical).
   ///
-  /// @return Returns true if the middle of the image is likely to be on a target.
+  /// @return Returns true if the cursor will target an enemy on the next frame.
   ///
   bool scan(const uint8_t* image, float mx = 0.0f, float my = 0.0f) noexcept;
 
-  /// Tries to parse the current UI state.
+  /// Searches for known hero portraits.
   ///
   /// @param image Unmodified image from Overwatch (sw x sh 4 byte rgba).
   ///
-  /// @return Returns the best guess.
+  /// @return Returns best match and error value.
   ///
-  std::pair<hero, double> parse(uint8_t* image) noexcept;
+  std::pair<hero::type, double> type(uint8_t* image) noexcept;
 
   /// Draws polygons, contours and filtered outlines from the last @ref scan call over the image.
   ///
@@ -132,7 +125,7 @@ private:
   size_t cursor_interpolation_size_{ 1 };
 
   cv::Mat hero_scan_;
-  std::array<cv::Mat, static_cast<unsigned>(hero::unknown)> hero_scans_;
+  std::array<cv::Mat, static_cast<unsigned>(hero::type::none)> hero_scans_;
 };
 
 }  // namespace horus

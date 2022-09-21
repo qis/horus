@@ -22,12 +22,23 @@ public:
 
   status scan(std::uint8_t* data, const hid::mouse& mouse, clock::time_point frame) noexcept override
   {
-    // TODO: Process mouse state.
+    if (mouse.buttons & rock::button::right) {
+      if (frame + std::chrono::milliseconds(500) > release_) {
+        client_.mask(rock::button::middle, std::chrono::seconds(1));
+        release_ = frame + std::chrono::seconds(1);
+      }
+    } else {
+      if (frame < release_) {
+        client_.mask(rock::button::middle, std::chrono::seconds(0));
+        release_ = frame;
+      }
+    }
     return status::none;
   }
 
 private:
   rock::client& client_;
+  clock::time_point release_{ clock::now() };
 };
 
 }  // namespace horus::hero

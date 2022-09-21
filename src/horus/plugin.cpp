@@ -160,8 +160,6 @@ public:
         if (!hero_ || hero_->type() != hero_type) {
           if (hero_type == hero::type::ana && hero_error < 0.1) {
             hero_ = std::make_unique<hero::ana>(eye_, client_);
-          } else if (hero_type == hero::type::brigitte && hero_error < 0.1) {
-            hero_ = std::make_unique<hero::brigitte>(client_);
           } else if (hero_type == hero::type::pharah && hero_error < 0.8) {
             hero_ = std::make_unique<hero::pharah>(client_);
           } else if (hero_type == hero::type::reaper && hero_error < 0.5) {

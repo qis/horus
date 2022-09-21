@@ -81,10 +81,6 @@ eye::eye()
     cv::cvtColor(hero, hero_scans_[static_cast<std::uint8_t>(hero::type::ana)], cv::COLOR_BGRA2GRAY);
   }
 
-  if (auto hero = cv::imread(HORUS_HEROES_DIR "/brigitte.png", cv::IMREAD_UNCHANGED); hero.size) {
-    cv::cvtColor(hero, hero_scans_[static_cast<std::uint8_t>(hero::type::brigitte)], cv::COLOR_BGRA2GRAY);
-  }
-
   if (auto hero = cv::imread(HORUS_HEROES_DIR "/pharah.png", cv::IMREAD_UNCHANGED); hero.size) {
     cv::cvtColor(hero, hero_scans_[static_cast<std::uint8_t>(hero::type::pharah)], cv::COLOR_BGRA2GRAY);
   }

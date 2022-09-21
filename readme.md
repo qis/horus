@@ -48,7 +48,7 @@ pip install conan
 conan install . -if third_party -pr conan.profile
 ```
 
-6. Configure Overwatch.
+6. Configure Overwatch options.
 
 ```
 Options
@@ -93,7 +93,10 @@ Options
     Filter: Off
     Enemy UI Color: Magenta
     Friendly UI Color: Blue (Friendly Default)
+
 + Controls
+  + Mouse
+    Sensitivity: 7.00
   + Reticle
     + Type: Circle
       Show Accuracy: Off
@@ -101,54 +104,95 @@ Options
       Thickness: 1
       Center Gap: 30
       Opacity: 80
-      Outline Opacity: 50
+      Outline Opacity: 100
       Dot Size: 6
       Dot Opacity: 100
       Scale with Resolution: Off
-  + Hero
-    Allied Health Bars: Always
-  + Movement
-    Jump: SPACE | `horus M 3`
-  + Weapos & Abilities
-    Ability 1: LSHIFT | `horus D 3`
-    Ability 2: E | `horus U 3`
-    Quick Melee: C
-    Next Weapon: EMPTY
-    Previous Weapon: EMPTY
+    Quick Melee: C | EMPTY
+    Next Weapon: EMPTY | EMPTY
+    Previous Weapon: EMPTY | EMPTY
   + Communication
-    Communication Menu: V
+    Communication Menu: V | EMPTY
   + Miscellaneous
     Take Screenshot: PAUSE | RIGHT CTRL
-    Toggle UI: EMPTY
-+ Controls (Ana)
+    Toggle UI: EMPTY | EMPTY
+
+  Controls (Ana)
   + Reticle
     + Type: Dot
   + Hero
+    Allied Health Bars: Always
+    Show Friendly Outlines: Always
     Relative Aim Sensitivity While Zoomed: 46.00
-+ Controls (Ashe)
+    Nano Boost Requires Target Confirmation: On
+    Nano Boost Sensitivity: 80
+
+  Controls (Ashe)
   + Reticle
     + Type: Dot
   + Hero
     Relative Aim Sensitivity While Zoomed: 61.00
-+ Controls (Mercy)
-  + Weapos & Abilities
-    Equip Weapon 1: 1 | SCROLL WHEEL UP
-    Equip Weapon 2: 2 | SCROLL WHEEL DOWN
-+ Controls (Pharah)
-  + Movement
-    Jump: `horus M 3` | EMPTY
-  + Weapos & Abilities
-    Ability 1: LSHIFT | EMPTY
-    Ability 2: E | EMPTY
-    Secondary Fire: EMPTY
-+ Controls (Reaper)
+
+  Controls (Baptiste)
+  + Hero
+    Allied Health Bars: Always
+    Show Friendly Outlines: Always
+
+  Controls (Brigitte)
+  + Hero
+    Allied Health Bars: Always
+    Show Friendly Outlines: Always
+
+  Controls (D.Va)
   + Reticle
     + Type: Circle
       Center Gap: 100
-+ Controls (Zenyatta)
+
+  Controls (Mercy)
+  + Hero
+    Allied Health Bars: Always
+    Show Friendly Outlines: Always
+  + Weapos & Abilities
+    Equip Weapon 1: 1 | SCROLL WHEEL UP
+    Equip Weapon 2: 2 | SCROLL WHEEL DOWN
+
+  Controls (Moira)
+  + Hero
+    Allied Health Bars: Always
+    Show Friendly Outlines: Always
+
+  Controls (Pharah)
+  + Movement
+    Jump: MIDDLE MOUSE BUTTON | EMPTY
+  + Weapos & Abilities
+    Secondary Fire: EMPTY | EMPTY
+
+  Controls (Reaper)
+  + Reticle
+    + Type: Circle
+      Center Gap: 100
+
+  Controls (Roadhog)
+  + Reticle
+    + Type: Circle
+      Center Gap: 60
+
+  Controls (Widowmaker)
+  + Reticle
+    + Type: Dot
+  + Hero
+    Relative Aim Sensitivity While Zoomed: 46.00
+
+  Controls (Zenyatta)
+  + Reticle
+    + Type: Dot
+  + Hero
+    Allied Health Bars: Always
+    Show Friendly Outlines: Always
   + Weapos & Abilities
     Ability 1: SCROLL WHEEL UP
     Ability 2: SCROLL WHEEL DOWN
+
 + Gameplay
   Waypoint Opacity: 30%
   Respawn Icon Opacity: 30%

@@ -5,7 +5,6 @@ namespace horus::hero {
 
 enum class type : std::uint8_t {
   ana,
-  brigitte,
   pharah,
   reaper,
   none,
@@ -16,7 +15,6 @@ inline constexpr const char* name(type value) noexcept
   // clang-format off
   switch (value) {
   case type::ana: return "ana";
-  case type::brigitte: return "brigitte";
   case type::pharah: return "pharah";
   case type::reaper: return "reaper";
   case type::none: return "none";

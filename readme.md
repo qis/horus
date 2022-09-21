@@ -117,6 +117,9 @@ Options
     Previous Weapon: EMPTY
   + Communication
     Communication Menu: V
+  + Miscellaneous
+    Take Screenshot: PAUSE | RIGHT CTRL
+    Toggle UI: EMPTY
 + Controls (Ana)
   + Reticle
     + Type: Dot
@@ -132,6 +135,8 @@ Options
     Equip Weapon 1: 1 | SCROLL WHEEL UP
     Equip Weapon 2: 2 | SCROLL WHEEL DOWN
 + Controls (Pharah)
+  + Movement
+    Jump: `horus M 3` | EMPTY
   + Weapos & Abilities
     Ability 1: LSHIFT | EMPTY
     Ability 2: E | EMPTY
@@ -153,11 +158,11 @@ Options
 Hero Gallery
 + Ana > Skins: Horus
 + Ashe > Skins: Sunflower (Change to Safari and update res/heroes/ashe.png)
-+ Pharah > Skins: Security Chief
++ Pharah > Skins: Anubis (Change to one with smaller weapon and update res/heroes/pharah.png)
 + Reaper > Skins: Blackwatch Reyes
 ```
 
-The code to inject mouse buttons relies on [anubis](https://github.com/qis/anubis), which is a private project.
+The code to inject mouse buttons relies on [rock](https://github.com/qis/rock), which is a private project.
 
 ## TODO
 - Get a high refreshrate monitor.

@@ -17,8 +17,8 @@ file(GLOB_RECURSE headers src/horus/*.hpp)
 file(GLOB_RECURSE sources src/horus/*.cpp)
 
 add_library(horus SHARED ${headers} ${sources} src/main.manifest)
+target_include_directories(horus PRIVATE src src/rock/src)
 target_compile_definitions(horus PRIVATE HORUS_EXPORTS)
-target_include_directories(horus PUBLIC src)
 
 target_compile_features(horus PUBLIC cxx_std_20)
 target_compile_definitions(horus PUBLIC HORUS_DEBUG=$<IF:$<CONFIG:Release>,0,1>)
@@ -51,6 +51,7 @@ target_link_libraries(horus PUBLIC SDL2::SDL2-static)
 
 # Executable
 add_executable(main src/main.cpp src/main.manifest src/main.rc)
+target_include_directories(main PRIVATE src src/rock/src)
 set_target_properties(main PROPERTIES OUTPUT_NAME horus)
 target_link_libraries(main PRIVATE horus)
 

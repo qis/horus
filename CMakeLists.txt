@@ -13,7 +13,7 @@ endforeach()
 list(PREPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
 # Library
-file(GLOB_RECURSE headers src/horus/*.hpp)
+file(GLOB_RECURSE headers src/horus/*.hpp src/rock/src/client.hpp)
 file(GLOB_RECURSE sources src/horus/*.cpp)
 
 add_library(horus SHARED ${headers} ${sources} src/main.manifest)

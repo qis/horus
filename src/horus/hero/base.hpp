@@ -3,9 +3,8 @@
 
 namespace horus::hero {
 
-enum class type : unsigned {
+enum class type : std::uint8_t {
   ana,
-  ashe,
   brigitte,
   pharah,
   reaper,
@@ -17,7 +16,6 @@ inline constexpr const char* name(type value) noexcept
   // clang-format off
   switch (value) {
   case type::ana: return "ana";
-  case type::ashe: return "ashe";
   case type::brigitte: return "brigitte";
   case type::pharah: return "pharah";
   case type::reaper: return "reaper";
@@ -27,9 +25,19 @@ inline constexpr const char* name(type value) noexcept
   // clang-format on
 }
 
+enum status : std::uint8_t {
+  none = 0x00,
+  draw = 0x01,
+  beep = 0x02,
+};
+
+using clock = std::chrono::high_resolution_clock;
+
 class base {
 public:
   virtual ~base() = default;
+
+  virtual type type() const noexcept = 0;
 
   /// Searches image for world or user interface elements.
   ///
@@ -38,7 +46,7 @@ public:
   ///
   /// @return Returns true if the eye::draw* functions can be used after this call.
   ///
-  virtual bool scan(std::uint8_t* data, const hid::mouse& mouse) noexcept = 0;
+  virtual status scan(std::uint8_t* data, const hid::mouse& mouse, clock::time_point frame) noexcept = 0;
 };
 
 }  // namespace horus::hero

@@ -6,10 +6,6 @@
 #include <format>
 #include <cassert>
 
-#include <horus/log.hpp>
-
-#define HORUS_DATA_DIR "C:/OBS/horus/res"
-
 namespace horus {
 namespace {
 
@@ -81,20 +77,20 @@ eye::eye()
     e = cv::Mat(cv::Size(hw, hh), CV_8UC1);
   }
 
-  if (auto hero = cv::imread(HORUS_DATA_DIR "/heroes/ana.png", cv::IMREAD_UNCHANGED); hero.size) {
-    cv::cvtColor(hero, hero_scans_[static_cast<unsigned>(hero::type::ana)], cv::COLOR_BGRA2GRAY);
+  if (auto hero = cv::imread(HORUS_HEROES_DIR "/ana.png", cv::IMREAD_UNCHANGED); hero.size) {
+    cv::cvtColor(hero, hero_scans_[static_cast<std::uint8_t>(hero::type::ana)], cv::COLOR_BGRA2GRAY);
   }
 
-  if (auto hero = cv::imread(HORUS_DATA_DIR "/heroes/ashe.png", cv::IMREAD_UNCHANGED); hero.size) {
-    cv::cvtColor(hero, hero_scans_[static_cast<unsigned>(hero::type::ashe)], cv::COLOR_BGRA2GRAY);
+  if (auto hero = cv::imread(HORUS_HEROES_DIR "/brigitte.png", cv::IMREAD_UNCHANGED); hero.size) {
+    cv::cvtColor(hero, hero_scans_[static_cast<std::uint8_t>(hero::type::brigitte)], cv::COLOR_BGRA2GRAY);
   }
 
-  if (auto hero = cv::imread(HORUS_DATA_DIR "/heroes/pharah.png", cv::IMREAD_UNCHANGED); hero.size) {
-    cv::cvtColor(hero, hero_scans_[static_cast<unsigned>(hero::type::pharah)], cv::COLOR_BGRA2GRAY);
+  if (auto hero = cv::imread(HORUS_HEROES_DIR "/pharah.png", cv::IMREAD_UNCHANGED); hero.size) {
+    cv::cvtColor(hero, hero_scans_[static_cast<std::uint8_t>(hero::type::pharah)], cv::COLOR_BGRA2GRAY);
   }
 
-  if (auto hero = cv::imread(HORUS_DATA_DIR "/heroes/reaper.png", cv::IMREAD_UNCHANGED); hero.size) {
-    cv::cvtColor(hero, hero_scans_[static_cast<unsigned>(hero::type::reaper)], cv::COLOR_BGRA2GRAY);
+  if (auto hero = cv::imread(HORUS_HEROES_DIR "/reaper.png", cv::IMREAD_UNCHANGED); hero.size) {
+    cv::cvtColor(hero, hero_scans_[static_cast<std::uint8_t>(hero::type::reaper)], cv::COLOR_BGRA2GRAY);
   }
 }
 

@@ -155,11 +155,11 @@ Options
   Ability Timer Ring Opacity: 30%
   Player Outline Strength: 100%
 
-Hero Gallery
-+ Ana > Skins: Horus
-+ Ashe > Skins: Sunflower (Change to Safari and update res/heroes/ashe.png)
-+ Pharah > Skins: Anubis (Change to one with smaller weapon and update res/heroes/pharah.png)
-+ Reaper > Skins: Blackwatch Reyes
+Hero Gallery > [Hero] > Skins
++ Ana: Horus
++ Brigitte: Vampire Hunter
++ Pharah: Asp
++ Reaper: Blackwatch Reyes
 ```
 
 The code to inject mouse buttons relies on [rock](https://github.com/qis/rock), which is a private project.

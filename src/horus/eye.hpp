@@ -125,7 +125,7 @@ private:
   size_t cursor_interpolation_size_{ 1 };
 
   cv::Mat hero_scan_;
-  std::array<cv::Mat, static_cast<unsigned>(hero::type::none)> hero_scans_;
+  std::array<cv::Mat, static_cast<std::size_t>(hero::type::none)> hero_scans_;
 };
 
 }  // namespace horus

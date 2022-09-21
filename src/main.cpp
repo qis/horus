@@ -1,4 +1,4 @@
-#include <anubis/client.hpp>
+#include <rock/client.hpp>
 #include <chrono>
 #include <iostream>
 #include <thread>
@@ -50,28 +50,19 @@ int main(int argc, char* argv[])
     uint8_t mask = 0;
     switch (argv[1][0]) {
     case 'L':
-      mask = anubis::button::left;
+      mask = rock::button::left;
       break;
     case 'R':
-      mask = anubis::button::right;
+      mask = rock::button::right;
       break;
     case 'M':
-      mask = anubis::button::middle;
-      break;
-    case 'U':
-      mask = anubis::button::up;
+      mask = rock::button::middle;
       break;
     case 'D':
-      mask = anubis::button::down;
+      mask = rock::button::down;
       break;
-    case 'E':
-      mask = anubis::button::e;
-      break;
-    case 'S':
-      mask = anubis::button::shift;
-      break;
-    case 'P':
-      mask = anubis::button::space;
+    case 'U':
+      mask = rock::button::up;
       break;
     default:
       return usage();
@@ -84,7 +75,7 @@ int main(int argc, char* argv[])
       }
       std::this_thread::sleep_for(std::chrono::seconds(seconds));
     }
-    anubis::client client;
+    rock::client client;
     
     client.mask(mask, std::chrono::milliseconds(7));
   }

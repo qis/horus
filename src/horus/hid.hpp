@@ -24,6 +24,8 @@ public:
     bool shift;
     bool space;
     bool control;
+    bool menu;
+    bool win;
   };
 
   hid() noexcept;

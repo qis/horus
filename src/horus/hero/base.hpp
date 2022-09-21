@@ -1,5 +1,6 @@
 #pragma once
 #include <horus/hid.hpp>
+#include <chrono>
 
 namespace horus::hero {
 
@@ -44,7 +45,11 @@ public:
   ///
   /// @return Returns true if the eye::draw* functions can be used after this call.
   ///
-  virtual status scan(std::uint8_t* data, const hid::mouse& mouse, clock::time_point frame) noexcept = 0;
+  virtual status scan(
+    std::uint8_t* data,
+    const hid::keybd& keybd,
+    const hid::mouse& mouse,
+    clock::time_point frame) noexcept = 0;
 };
 
 }  // namespace horus::hero

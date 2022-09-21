@@ -2,7 +2,6 @@
 #include "config.hpp"
 #include <dinput.h>
 #include <dinputd.h>
-#include <rock/config.hpp>
 #include <cstdint>
 
 namespace horus {
@@ -10,9 +9,21 @@ namespace horus {
 class HORUS_API hid {
 public:
   struct mouse {
-    std::uint8_t buttons;
+    bool left;
+    bool right;
+    bool middle;
+    bool down;
+    bool up;
     std::int32_t dx;
     std::int32_t dy;
+  };
+
+  struct keybd {
+    bool q;
+    bool e;
+    bool shift;
+    bool space;
+    bool control;
   };
 
   hid() noexcept;
@@ -24,12 +35,18 @@ public:
 
   ~hid();
 
+  bool get(keybd& state) noexcept;
   bool get(mouse& state) noexcept;
 
 private:
   LPDIRECTINPUT8 input_{ nullptr };
-  LPDIRECTINPUTDEVICE8 device_{ nullptr };
-  DIMOUSESTATE2 state_{};
+
+  LPDIRECTINPUTDEVICE8 keybd_{ nullptr };
+  std::uint8_t keybd_state_[256]{};
+
+  LPDIRECTINPUTDEVICE8 mouse_{ nullptr };
+  DIMOUSESTATE2 mouse_state_{};
+  
 };
 
 }  // namespace horus

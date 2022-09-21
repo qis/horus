@@ -26,83 +26,120 @@ hid::hid() noexcept
     },
     reinterpret_cast<LPARAM>(&ewd));
 
-  if (ewd.hwnd) {
-    auto hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    if (SUCCEEDED(hr)) {
-      hr = DirectInput8Create(
-        GetModuleHandle(nullptr),
-        DIRECTINPUT_VERSION,
-        IID_IDirectInput8,
-        reinterpret_cast<LPVOID*>(&input_),
-        nullptr);
-      if (SUCCEEDED(hr)) {
-        hr = input_->CreateDevice(GUID_SysMouse, &device_, nullptr);
-        if (SUCCEEDED(hr)) {
-          hr = device_->SetDataFormat(&c_dfDIMouse2);
-          if (FAILED(hr)) {
-            log("could not set mouse data format");
-          }
-          hr = device_->SetCooperativeLevel(ewd.hwnd, DISCL_BACKGROUND | DISCL_NONEXCLUSIVE);
-          if (FAILED(hr)) {
-            log("could not set mouse cooperative level");
-          }
-          hr = device_->Acquire();
-          if (FAILED(hr)) {
-            log("could not acquire mouse");
-          }
-        } else {
-          log("could not create mouse device");
-          device_ = nullptr;
-          input_->Release();
-        }
-      } else {
-        log("could not initialize direct input");
-        input_ = nullptr;
-      }
-    } else {
-      log("could not initialize com library");
+  if (!ewd.hwnd) {
+    log("could not find current process window handle");
+    return;
+  }
+
+  HRESULT hr = 0;
+
+  hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  if (FAILED(hr)) {
+    log("could not initialize com library");
+    return;
+  }
+
+  hr = DirectInput8Create(
+    GetModuleHandle(nullptr),
+    DIRECTINPUT_VERSION,
+    IID_IDirectInput8,
+    reinterpret_cast<LPVOID*>(&input_),
+    nullptr);
+  if (FAILED(hr)) {
+    log("could not initialize direct input");
+    input_ = nullptr;
+    return;
+  }
+
+  hr = input_->CreateDevice(GUID_SysKeyboard, &keybd_, nullptr);
+  if (SUCCEEDED(hr)) {
+    hr = keybd_->SetDataFormat(&c_dfDIKeyboard);
+    if (FAILED(hr)) {
+      log("could not set keyboard data format");
+    }
+    hr = keybd_->SetCooperativeLevel(ewd.hwnd, DISCL_BACKGROUND | DISCL_NONEXCLUSIVE);
+    if (FAILED(hr)) {
+      log("could not set keyboard cooperative level");
+    }
+    hr = keybd_->Acquire();
+    if (FAILED(hr)) {
+      log("could not acquire keyboard");
     }
   } else {
-    log("could not find current process window handle");
+    log("could not create keyboard device");
+    keybd_ = nullptr;
+  }
+
+  hr = input_->CreateDevice(GUID_SysMouse, &mouse_, nullptr);
+  if (SUCCEEDED(hr)) {
+    hr = mouse_->SetDataFormat(&c_dfDIMouse2);
+    if (FAILED(hr)) {
+      log("could not set mouse data format");
+    }
+    hr = mouse_->SetCooperativeLevel(ewd.hwnd, DISCL_BACKGROUND | DISCL_NONEXCLUSIVE);
+    if (FAILED(hr)) {
+      log("could not set mouse cooperative level");
+    }
+    hr = mouse_->Acquire();
+    if (FAILED(hr)) {
+      log("could not acquire mouse");
+    }
+  } else {
+    log("could not create mouse device");
+    mouse_ = nullptr;
   }
 }
 
 hid::~hid()
 {
-  if (device_) {
-    device_->Unacquire();
-    device_->Release();
+  if (mouse_) {
+    mouse_->Unacquire();
+    mouse_->Release();
+  }
+  if (keybd_) {
+    keybd_->Unacquire();
+    keybd_->Release();
   }
   if (input_) {
     input_->Release();
   }
 }
 
-bool hid::get(mouse& state) noexcept
+bool hid::get(keybd& state) noexcept
 {
-  const auto hr = device_->GetDeviceState(sizeof(state_), &state_);
+  if (!keybd_) {
+    return false;
+  }
+  const auto hr = keybd_->GetDeviceState(sizeof(keybd_state_), keybd_state_);
   if (SUCCEEDED(hr)) {
-    state.buttons = 0;
-    if (state_.rgbButtons[0] != 0) {
-      state.buttons |= rock::button::left;
-    }
-    if (state_.rgbButtons[1] != 0) {
-      state.buttons |= rock::button::right;
-    }
-    if (state_.rgbButtons[2] != 0) {
-      state.buttons |= rock::button::middle;
-    }
-    if (state_.rgbButtons[3] != 0) {
-      state.buttons |= rock::button::down;
-    }
-    if (state_.rgbButtons[4] != 0) {
-      state.buttons |= rock::button::up;
-    }
-    state.dx = state_.lX;
-    state.dy = state_.lY;
+    state.q = keybd_state_[DIK_Q] & 0x80 ? true : false;
+    state.e = keybd_state_[DIK_E] & 0x80 ? true : false;
+    state.shift = keybd_state_[DIK_LSHIFT] & 0x80 ? true : false;
+    state.space = keybd_state_[DIK_SPACE] & 0x80 ? true : false;
+    state.control = keybd_state_[DIK_LCONTROL] & 0x80 ? true : false;
     return true;
   }
-  device_->Acquire();
+  keybd_->Acquire();
+  return false;
+}
+
+bool hid::get(mouse& state) noexcept
+{
+  if (!mouse_) {
+    return false;
+  }
+  const auto hr = mouse_->GetDeviceState(sizeof(mouse_state_), &mouse_state_);
+  if (SUCCEEDED(hr)) {
+    state.left = mouse_state_.rgbButtons[0] != 0;
+    state.right = mouse_state_.rgbButtons[1] != 0;
+    state.middle = mouse_state_.rgbButtons[2] != 0;
+    state.down = mouse_state_.rgbButtons[3] != 0;
+    state.up = mouse_state_.rgbButtons[4] != 0;
+    state.dx = mouse_state_.lX;
+    state.dy = mouse_state_.lY;
+    return true;
+  }
+  mouse_->Acquire();
   state.dx = 0;
   state.dy = 0;
   return false;

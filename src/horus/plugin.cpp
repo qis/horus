@@ -140,14 +140,15 @@ public:
 
       gs_stage_texture(stagesurf_, gs_texrender_get_texture(texrender_));
       if (gs_stagesurface_map(stagesurf_, &data, &line)) {
-        // Get mouse state.
+        // Get keyboard and mouse state.
+        hid_.get(keybd_);
         hid_.get(mouse_);
 
         // Scan image with current hero.
         auto draw = false;
         auto beep = false;
         if (hero_) {
-          const auto status = hero_->scan(data, mouse_, tp0);
+          const auto status = hero_->scan(data, keybd_, mouse_, tp0);
           draw = status & hero::status::draw ? true : false;
           beep = status & hero::status::beep ? true : false;
         }
@@ -294,6 +295,7 @@ private:
 
   eye eye_;
   hid hid_;
+  hid::keybd keybd_;
   hid::mouse mouse_;
   rock::client client_;
   std::unique_ptr<hero::base> hero_;

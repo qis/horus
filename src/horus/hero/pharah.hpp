@@ -20,9 +20,13 @@ public:
     return hero::type::pharah;
   }
 
-  status scan(std::uint8_t* data, const hid::mouse& mouse, clock::time_point frame) noexcept override
+  status scan(
+    std::uint8_t* data,
+    const hid::keybd& keybd,
+    const hid::mouse& mouse,
+    clock::time_point frame) noexcept override
   {
-    if (mouse.buttons & rock::button::right) {
+    if (keybd.space || mouse.right) {
       if (frame + std::chrono::milliseconds(500) > release_) {
         client_.mask(rock::button::middle, std::chrono::seconds(1));
         release_ = frame + std::chrono::seconds(1);

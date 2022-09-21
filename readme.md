@@ -201,7 +201,6 @@ Options
 
 Hero Gallery > [Hero] > Skins
 + Ana: Horus
-+ Brigitte: Vampire Hunter
 + Pharah: Asp
 + Reaper: Blackwatch Reyes
 ```

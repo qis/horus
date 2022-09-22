@@ -67,22 +67,12 @@ public:
     // Handle e down event.
     if (keybd.e && !e_state_) {
       client_.mask(rock::button::middle, std::chrono::seconds(0));
-      blast_flight_ = true;
-      blast_flight_start_ = frame;
+      assisted_flight_update_ = frame - flight_duration;
+      assisted_flight_ = true;
     }
 
     // Update e down state.
     e_state_ = keybd.e;
-
-    // Handle blast flight state.
-    if (blast_flight_ && !keybd.space && !mouse.right) {
-      if (frame > blast_flight_start_ + blast_duration) {
-        blast_flight_ = false;
-        assisted_flight_ = true;
-        assisted_flight_update_ = frame - flight_duration - fall_duration;
-      }
-      return status::none;
-    }
 
     if (keybd.space || mouse.right) {
       // Handle space or right mouse button down event.
@@ -140,13 +130,11 @@ public:
 private:
   rock::client& client_;
 
+  bool e_state_{ false };
   bool shift_state_{ false };
+
   bool jump_flight_{ false };
   clock::time_point jump_flight_start_{};
-
-  bool e_state_{ false };
-  bool blast_flight_{ false };
-  clock::time_point blast_flight_start_{};
 
   bool manual_flight_{ false };
   clock::time_point manual_flight_start_{};

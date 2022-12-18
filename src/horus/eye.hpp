@@ -1,6 +1,5 @@
 #pragma once
 #include "config.hpp"
-#include <horus/hero/base.hpp>
 #include <opencv2/imgproc.hpp>
 #include <array>
 #include <chrono>
@@ -24,30 +23,31 @@ public:
   static constexpr uint32_t sy = (dh - sh) / 2;  // 28
 
   // Hero portrait offset and size.
-  static constexpr uint32_t hx = 320 + 162;
-  static constexpr uint32_t hy = 919;
-  static constexpr uint32_t hw = 38;
-  static constexpr uint32_t hh = 38;
+  static constexpr uint32_t hx = (2560 - 1920) / 2 + 71;
+  static constexpr uint32_t hy = 932;
+  static constexpr uint32_t hw = 64;
+  static constexpr uint32_t hh = 64;
 
-  // Overlay color (minimum red, maximum green, minimum blue).
-  // - 0xA060A0 is a safe value
-  // - 0xA080A0 enables recognition of distant outlines
+  // Chat input box offset and size.
+  static constexpr uint32_t cx = (2560 - 1920) / 2 + 55;
+  static constexpr uint32_t cy = 664;
+  static constexpr uint32_t cw = 96;
+  static constexpr uint32_t ch = 32;
+
+  // Overlay color (magenta, minimum red, maximum green, minimum blue).
+  // - 0xC217BF scoped, close
+  // - 0xCA3FD9 scoped, distant
+  // - 0xA080A0 scoped, recommended
   static constexpr uint32_t oc = 0xA080A0;
 
-  // Minimum distance between cursor interpolation points (must be even and greater, or equal to 2).
-  static constexpr long cursor_interpolation_distance = 4;
-
-  // Maximum number of cursor interpolation points (must be even and greater, or equal to 4).
-  static constexpr size_t cursor_interpolation_capacity = 8;
-
-  // Cursor interpolation point starting position (must be between 0.05 and 0.95).
-  static constexpr float cursor_interpolation_position = 0.6f;
+  // Cursor interpolation multiplier (increase when over-shooting the target).
+  static constexpr float cm = 2.1f;
 
   // Minimum contour area before.
   static constexpr double minimum_contour_area = 64.0;
 
   // Maximum outline ratio.
-  static constexpr double maximum_outline_ratio = 0.4;
+  static constexpr double maximum_outline_ratio = 0.3;
 
   // Connect polygons, which have points close to each other.
   static constexpr double polygon_connect_distance = 16.0;
@@ -67,15 +67,7 @@ public:
   ///
   /// @return Returns true if the cursor will target an enemy on the next frame.
   ///
-  bool scan(const uint8_t* image, float mx = 0.0f, float my = 0.0f) noexcept;
-
-  /// Searches for known hero portraits.
-  ///
-  /// @param image Unmodified image from Overwatch (sw x sh 4 byte rgba).
-  ///
-  /// @return Returns best match and error value.
-  ///
-  std::pair<hero::type, double> type(uint8_t* image) noexcept;
+  bool scan(const uint8_t* image, int32_t mx, int32_t my) noexcept;
 
   /// Draws polygons, contours and filtered outlines from the last @ref scan call over the image.
   ///
@@ -113,7 +105,8 @@ private:
   std::vector<uint8_t> overlays_{ std::vector<uint8_t>(sw * sh) };
   cv::Mat overlays_image_{ sw, sh, CV_8UC1, overlays_.data(), sw };
 
-  cv::Mat close_kernel_{ cv::getStructuringElement(cv::MORPH_RECT, { 4, 4 }) };
+  cv::Mat close_kernel_{ cv::getStructuringElement(cv::MORPH_RECT, { 3, 2 }) };
+  cv::Mat erode_kernel_{ cv::getStructuringElement(cv::MORPH_RECT, { 16, 4 }) };
 
   std::vector<cv::Vec4i> hierarchy_;
   std::vector<std::vector<cv::Point>> contours_;
@@ -121,11 +114,7 @@ private:
   std::vector<size_t> polygons_fill_count_;
   std::vector<cv::Point> hull_;
 
-  std::array<cv::Point2f, cursor_interpolation_capacity> cursor_interpolation_;
-  size_t cursor_interpolation_size_{ 1 };
-
-  cv::Mat hero_scan_;
-  std::array<cv::Mat, static_cast<std::size_t>(hero::type::none)> hero_scans_;
+  std::array<cv::Point2f, 7> cursor_interpolation_;
 };
 
 }  // namespace horus

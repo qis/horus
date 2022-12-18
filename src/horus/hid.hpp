@@ -24,6 +24,7 @@ public:
     bool shift;
     bool space;
     bool control;
+    bool enter;
     bool menu;
     bool win;
   };
@@ -48,7 +49,6 @@ private:
 
   LPDIRECTINPUTDEVICE8 mouse_{ nullptr };
   DIMOUSESTATE2 mouse_state_{};
-  
 };
 
 }  // namespace horus

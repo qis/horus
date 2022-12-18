@@ -16,6 +16,8 @@
 #include <Windows.h>
 #include <SDL.h>
 
+#define DRAW_OVERLAY 0
+
 namespace horus {
 
 class plugin {
@@ -93,6 +95,8 @@ public:
 
   void render() noexcept
   {
+    using namespace std::chrono_literals;
+
     const auto tp0 = clock::now();
     clock::time_point tp1;
 
@@ -118,6 +122,7 @@ public:
       uint8_t* data = nullptr;
 
       gs_projection_push();
+
       gs_ortho(
         float(eye::sx),
         float(eye::sx + eye::sw),
@@ -126,15 +131,27 @@ public:
         -100.0f,
         100.0f);
       obs_source_video_render(target);
-      gs_ortho(
-        float(eye::hx),
-        float(eye::hx + eye::hw),
-        float(eye::hy),
-        float(eye::hy + eye::hh),
-        -100.0f,
-        100.0f);
-      gs_set_viewport(0, 0, eye::hw, eye::hh);
-      obs_source_video_render(target);
+
+      //gs_ortho(
+      //  float(eye::hx),
+      //  float(eye::hx + eye::hw),
+      //  float(eye::hy),
+      //  float(eye::hy + eye::hh),
+      //  -100.0f,
+      //  100.0f);
+      //gs_set_viewport(0, 0, eye::hw, eye::hh);
+      //obs_source_video_render(target);
+
+      //gs_ortho(
+      //  float(eye::cx),
+      //  float(eye::cx + eye::cw),
+      //  float(eye::cy),
+      //  float(eye::cy + eye::ch),
+      //  -100.0f,
+      //  100.0f);
+      //gs_set_viewport(eye::hw, 0, eye::cw, eye::ch);
+      //obs_source_video_render(target);
+
       gs_projection_pop();
       gs_texrender_end(texrender_);
 
@@ -144,6 +161,12 @@ public:
         hid_.get(keybd_);
         hid_.get(mouse_);
 
+        // Adjust for scoped sensitivity.
+        //if (mouse_.right) {
+          mouse_.dx *= 1.2f;
+          mouse_.dy *= 1.2f;
+        //}
+
         // Scan image with current hero.
         auto draw = false;
         auto beep = false;
@@ -151,26 +174,12 @@ public:
           const auto status = hero_->scan(data, keybd_, mouse_, tp0);
           draw = status & hero::status::draw ? true : false;
           beep = status & hero::status::beep ? true : false;
+        } else {
+          hero_ = std::make_unique<hero::hitscan>(eye_, client_);
         }
 
         // Measure scan duration.
         tp1 = clock::now();
-
-        // Update hero.
-        const auto [hero_type, hero_error] = eye_.type(data);
-        if (!hero_ || hero_->type() != hero_type) {
-          if (hero_type == hero::type::ana && hero_error < 0.1) {
-            hero_ = std::make_unique<hero::ana>(eye_, client_);
-          //} else if (hero_type == hero::type::pharah && hero_error < 0.8) {
-          //  hero_ = std::make_unique<hero::pharah>(client_);
-          } else if (hero_type == hero::type::reaper && hero_error < 0.5) {
-            hero_ = std::make_unique<hero::reaper>(eye_, client_);
-          } else if (hero_ && tp0 > hero_seen_ + std::chrono::seconds(10)) {
-            hero_.reset();
-          }
-        } else {
-          hero_seen_ = tp0;
-        }
 
         // Handle screenshot request.
         bool screenshot_expected = true;
@@ -180,36 +189,39 @@ public:
         }
 
         // Draw overlay.
-        if (draw) {
+        if (draw && DRAW_OVERLAY) {
           eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
           eye_.draw_reticle(data, 0x000000FF, 0x00A5E7FF);
         }
 
         // Beep on request.
-        if (beep) {
+        if (beep && DRAW_OVERLAY) {
           play_sound();
         }
 
         // Draw information.
-        cv::Mat si(eye::sw, eye::sh, CV_8UC4, data, eye::sw * 4);
+        if (DRAW_OVERLAY) {
+          cv::Mat si(eye::sw, eye::sh, CV_8UC4, data, eye::sw * 4);
 
-        stats_.clear();
-        std::format_to(
-          std::back_inserter(stats_),
-          "{:02d} fps | {:02.1f} ms | {:1.3f} {}",
-          static_cast<int>(frames_per_second_),
-          average_duration_,
-          hero_error,
-          hero::name(hero_type));
+          stats_.clear();
+          std::format_to(
+            std::back_inserter(stats_),
+            "{:03d} fps | {:02.1f} ms | {} | {} | {}",
+            static_cast<int>(frames_per_second_),
+            average_duration_,
+            beep ? "!" : " ",
+            mouse_.left ? "!" : " ",
+            mouse_.dx);
 
-        const auto tpos = cv::Point(10, eye::sh - 10);
-        cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
-        cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
+          const auto tpos = cv::Point(10, eye::sh - 10);
+          cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
+          cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
 
-        // Release image.
-        gs_texture_set_image(scan_, data, eye::sw * 4, false);
-        gs_stagesurface_unmap(stagesurf_);
-        overlay = true;
+          // Release image.
+          gs_texture_set_image(scan_, data, eye::sw * 4, false);
+          gs_stagesurface_unmap(stagesurf_);
+          overlay = true;
+        }
       }
     }
     gs_blend_state_pop();
@@ -226,18 +238,20 @@ public:
       obs_source_skip_video_filter(source_);
     }
 
-    frame_counter_++;
-    const auto tp2 = clock::now();
-    processing_duration_ += tp1 - tp0;
-    if (frame_time_point_ + std::chrono::milliseconds(100) <= tp1) {
-      using duration = std::chrono::duration<float, std::milli>;
-      const auto frames = static_cast<float>(frame_counter_);
-      const auto frames_duration = std::chrono::duration_cast<duration>(tp0 - frame_time_point_);
-      average_duration_ = std::chrono::duration_cast<duration>(processing_duration_).count() / frames;
-      frames_per_second_ = frames / (frames_duration.count() / 1000.0f);
-      processing_duration_ = processing_duration_.zero();
-      frame_time_point_ = tp0;
-      frame_counter_ = 0;
+    if (DRAW_OVERLAY) {
+      frame_counter_++;
+      const auto tp2 = clock::now();
+      processing_duration_ += tp1 - tp0;
+      if (frame_time_point_ + std::chrono::milliseconds(100) <= tp1) {
+        using duration = std::chrono::duration<float, std::milli>;
+        const auto frames = static_cast<float>(frame_counter_);
+        const auto frames_duration = std::chrono::duration_cast<duration>(tp0 - frame_time_point_);
+        average_duration_ = std::chrono::duration_cast<duration>(processing_duration_).count() / frames;
+        frames_per_second_ = frames / (frames_duration.count() / 1000.0f);
+        processing_duration_ = processing_duration_.zero();
+        frame_time_point_ = tp0;
+        frame_counter_ = 0;
+      }
     }
   }
 
@@ -298,8 +312,12 @@ private:
   hid::keybd keybd_;
   hid::mouse mouse_;
   rock::client client_;
-  std::unique_ptr<hero::base> hero_;
+  std::unique_ptr<hero::hitscan> hero_;
   clock::time_point hero_seen_;
+
+  bool enter_state_{ false };
+  bool menu_state_{ false };
+  bool chat_state_{ false };
 
   Uint32 audio_length_{ 0 };
   Uint8* audio_buffer_{ nullptr };
@@ -375,7 +393,7 @@ static HHOOK hook = nullptr;
 
 static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
 {
-  if (wparam == WM_KEYDOWN && reinterpret_cast<LPKBDLLHOOKSTRUCT>(lparam)->vkCode == VK_F9) {
+  if (wparam == WM_KEYDOWN && reinterpret_cast<LPKBDLLHOOKSTRUCT>(lparam)->vkCode == VK_F10) {
     horus::plugin::screenshot_request.store(true, std::memory_order_release);
   }
   return CallNextHookEx(hook, code, wparam, lparam);

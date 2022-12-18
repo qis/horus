@@ -49,6 +49,8 @@ target_link_libraries(horus PUBLIC
 find_package(SDL2 REQUIRED COMPONENTS SDL2-static)
 target_link_libraries(horus PUBLIC SDL2::SDL2-static)
 
+add_custom_command(TARGET horus PRE_BUILD COMMAND ${CMAKE_SOURCE_DIR}/res/kill.cmd)
+
 # Executable
 add_executable(main src/main.cpp src/main.manifest src/main.rc)
 target_include_directories(main PRIVATE src src/rock/src)

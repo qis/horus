@@ -115,6 +115,8 @@ private:
   std::vector<cv::Point> hull_;
 
   std::array<cv::Point2f, 7> cursor_interpolation_;
+  std::array<cv::Point2f, 7> cursor_interpolation_buffer_;
+  std::array<bool, 7> cursor_interpolation_target_;
 };
 
 }  // namespace horus

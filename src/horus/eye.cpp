@@ -232,6 +232,7 @@ bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
   cursor_interpolation_[6] = { x0 + dx * 0.70f, y0 + dy * 0.70f };
 
   // Check if the cursor is targeting an enemy.
+  bool target = false;
   for (size_t i = 0, max = contours_.size(); i < max; i++) {
     // Create convex hull.
     cv::convexHull(cv::Mat(contours_[i]), hull_);
@@ -250,13 +251,15 @@ bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
         continue;
       }
       if (cv::pointPolygonTest(hull_, cip, false) > 0.0) {
-        return true;
+        target = true;
+        break;
       }
     }
 
     contours_[i] = std::move(hull_);
   }
-  return false;
+  cursor_interpolation_buffer_ = std::move(cursor_interpolation_);
+  return target;
 }
 
 void eye::draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept

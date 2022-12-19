@@ -161,11 +161,13 @@ public:
         hid_.get(keybd_);
         hid_.get(mouse_);
 
-        // Adjust for scoped sensitivity.
-        //if (mouse_.right) {
-          mouse_.dx *= 1.2f;
-          mouse_.dy *= 1.2f;
-        //}
+        // Adjust for sensitivity.
+        /*
+        mouse_.dx *= 1.2f;
+        mouse_.dy *= 1.2f;
+        */
+        mouse_.dx *= 1.1f;
+        mouse_.dy *= 1.1f;
 
         // Scan image with current hero.
         auto draw = false;

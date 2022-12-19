@@ -45,10 +45,10 @@ public:
     // Check if target is acquired.
     const auto target = eye_.scan(data, mouse.dx, mouse.dy);
 
-    auto set = false;
-
     // Shoot and prolong enabled time.
+    auto set = false;
     if (frame >= hitscan_blocked_ && target) {
+      client_.lock(std::chrono::milliseconds(18));
       client_.mask(rock::button::left, std::chrono::milliseconds(7));
       set = true;
     }

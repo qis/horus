@@ -1,8 +1,13 @@
 #pragma once
 
-#define HORUS_LOGGER_LOG "C:/OBS/horus.log"
-#define HORUS_EFFECT_DIR "C:/OBS/horus/res"
-#define HORUS_HEROES_DIR "C:/OBS/horus/res/heroes"
+#define DRAW_OVERLAY 0
+#define HERO_SUPPORT 0
+#define HERO_JUNKRAT 0
+#define HERO_TRACER 0
+#define HERO_WIDOWMAKER 0
+
+#define HORUS_LOG "C:/OBS/horus.log"
+#define HORUS_RES "C:/OBS/horus/res"
 
 #ifdef HORUS_EXPORTS
 #  define HORUS_API __declspec(dllexport)

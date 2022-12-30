@@ -10,15 +10,79 @@
 #include <chrono>
 #include <exception>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <vector>
 
 #include <Windows.h>
 #include <SDL.h>
 
-#define DRAW_OVERLAY 0
-
 namespace horus {
+
+class sound {
+public:
+  sound() noexcept = default;
+
+  sound(const char* filename) noexcept
+  {
+    SDL_LoadWAV(filename, &spec_, &buffer_, &length_);
+    if (buffer_) {
+      device_ = SDL_OpenAudioDevice(nullptr, 0, &spec_, nullptr, 0);
+    }
+  }
+
+  sound(sound&& other) noexcept :
+    length_(std::exchange(other.length_, 0)),
+    buffer_(std::exchange(other.buffer_, nullptr)),
+    spec_(std::exchange(other.spec_, {})),
+    device_(std::exchange(other.device_, 0))
+  {}
+
+  sound(const sound& other) noexcept = delete;
+
+  sound& operator=(sound&& other) noexcept
+  {
+    close();
+    length_ = std::exchange(other.length_, 0);
+    buffer_ = std::exchange(other.buffer_, nullptr);
+    spec_ = std::exchange(other.spec_, {});
+    device_ = std::exchange(other.device_, 0);
+    return *this;
+  }
+
+  sound& operator=(const sound& other) noexcept = delete;
+
+  ~sound()
+  {
+    close();
+  }
+
+  void close() noexcept
+  {
+    if (buffer_) {
+      if (device_) {
+        SDL_CloseAudioDevice(device_);
+        device_ = 0;
+      }
+      SDL_FreeWAV(buffer_);
+      buffer_ = nullptr;
+    }
+  }
+
+  void play() noexcept
+  {
+    if (device_) {
+      SDL_QueueAudio(device_, buffer_, length_);
+      SDL_PauseAudioDevice(device_, 0);
+    }
+  }
+
+private:
+  Uint32 length_{ 0 };
+  Uint8* buffer_{ nullptr };
+  SDL_AudioSpec spec_{};
+  SDL_AudioDeviceID device_{ 0 };
+};
 
 class plugin {
 public:
@@ -27,7 +91,8 @@ public:
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::shared_ptr<boost::asio::thread_pool> screenshot_thread_pool;
 
-  plugin(obs_source_t* context) noexcept : source_(context)
+  plugin(obs_source_t* context) noexcept :
+    source_(context), hero_(std::make_unique<hero::hitscan>(eye_, client_))
   {
     name_ = reinterpret_cast<std::uintptr_t>(this);
 
@@ -52,17 +117,17 @@ public:
       log("{:016X}: could not create scan texture", name_);
     }
 
-    draw_ = gs_effect_create_from_file(HORUS_EFFECT_DIR "/draw.effect", nullptr);
+    draw_ = gs_effect_create_from_file(HORUS_RES "/draw.effect", nullptr);
     if (!draw_) {
-      log("{:016X}: could not load draw effect: {}", name_, HORUS_EFFECT_DIR "/draw.effect");
+      log("{:016X}: could not load draw effect: {}", name_, HORUS_RES "/draw.effect");
     }
 
     obs_leave_graphics();
 
-    SDL_LoadWAV(HORUS_EFFECT_DIR "/ping.wav", &audio_spec_, &audio_buffer_, &audio_length_);
-    if (audio_buffer_) {
-      audio_device_ = SDL_OpenAudioDevice(nullptr, 0, &audio_spec_, nullptr, 0);
-    }
+    ping_ = { HORUS_RES "/ping.wav" };
+    warn_ = { HORUS_RES "/warn.wav" };
+    ammo_[0] = { HORUS_RES "/0.wav" };
+    ammo_[1] = { HORUS_RES "/1.wav" };
   }
 
   plugin(plugin&& other) = delete;
@@ -72,12 +137,6 @@ public:
 
   ~plugin()
   {
-    if (audio_buffer_) {
-      if (audio_device_) {
-        SDL_CloseAudioDevice(audio_device_);
-      }
-      SDL_FreeWAV(audio_buffer_);
-    }
     if (draw_) {
       gs_effect_destroy(draw_);
     }
@@ -123,6 +182,7 @@ public:
 
       gs_projection_push();
 
+      // Draw source.
       gs_ortho(
         float(eye::sx),
         float(eye::sx + eye::sw),
@@ -132,25 +192,16 @@ public:
         100.0f);
       obs_source_video_render(target);
 
-      //gs_ortho(
-      //  float(eye::hx),
-      //  float(eye::hx + eye::hw),
-      //  float(eye::hy),
-      //  float(eye::hy + eye::hh),
-      //  -100.0f,
-      //  100.0f);
-      //gs_set_viewport(0, 0, eye::hw, eye::hh);
-      //obs_source_video_render(target);
-
-      //gs_ortho(
-      //  float(eye::cx),
-      //  float(eye::cx + eye::cw),
-      //  float(eye::cy),
-      //  float(eye::cy + eye::ch),
-      //  -100.0f,
-      //  100.0f);
-      //gs_set_viewport(eye::hw, 0, eye::cw, eye::ch);
-      //obs_source_video_render(target);
+      // Draw ammmo.
+      gs_ortho(
+        float(eye::ax),
+        float(eye::ax + eye::aw),
+        float(eye::ay),
+        float(eye::ay + eye::ah),
+        -100.0f,
+        100.0f);
+      gs_set_viewport(0, 0, eye::aw, eye::ah);
+      obs_source_video_render(target);
 
       gs_projection_pop();
       gs_texrender_end(texrender_);
@@ -162,22 +213,28 @@ public:
         hid_.get(mouse_);
 
         // Adjust for sensitivity.
-        /*
-        mouse_.dx *= 1.2f;
-        mouse_.dy *= 1.2f;
-        */
-        mouse_.dx *= 1.1f;
-        mouse_.dy *= 1.1f;
-
-        // Scan image with current hero.
-        auto draw = false;
-        auto beep = false;
-        if (hero_) {
-          const auto status = hero_->scan(data, keybd_, mouse_, tp0);
-          draw = status & hero::status::draw ? true : false;
-          beep = status & hero::status::beep ? true : false;
+        if (HERO_WIDOWMAKER) {
+          mouse_.dx /= 6;
+          mouse_.dy /= 6;
         } else {
-          hero_ = std::make_unique<hero::hitscan>(eye_, client_);
+          mouse_.dx /= 3;
+          mouse_.dy /= 3;
+        }
+
+        // Scan using hero.
+        hero_->scan(data, keybd_, mouse_, tp0);
+
+        // Scan ammo and warn when it's running out soon.
+        if (const auto [ammo_count, error] = eye_.ammo(data); error < 0.1f) {
+          if (error < 0.01f || (ammo_count_ == 0 && ammo_count == 8) || (ammo_count_ > 0 && ammo_count == ammo_count_ - 1))
+          {
+            if (ammo_count_ != ammo_count) {
+              if (auto it = ammo_.find(ammo_count); it != ammo_.end()) {
+                it->second.play();
+              }
+            }
+            ammo_count_ = ammo_count;
+          }
         }
 
         // Measure scan duration.
@@ -185,20 +242,15 @@ public:
 
         // Handle screenshot request.
         bool screenshot_expected = true;
-        if (screenshot_request.compare_exchange_strong(screenshot_expected, false)) {
+        if (screenshot_request.compare_exchange_weak(screenshot_expected, false)) {
           screenshot(data);
-          play_sound();
+          ping_.play();
         }
 
         // Draw overlay.
-        if (draw && DRAW_OVERLAY) {
+        if (DRAW_OVERLAY) {
           eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
           eye_.draw_reticle(data, 0x000000FF, 0x00A5E7FF);
-        }
-
-        // Beep on request.
-        if (beep && DRAW_OVERLAY) {
-          play_sound();
         }
 
         // Draw information.
@@ -208,12 +260,9 @@ public:
           stats_.clear();
           std::format_to(
             std::back_inserter(stats_),
-            "{:03d} fps | {:02.1f} ms | {} | {} | {}",
+            "{:03d} fps | {:05.1f} ms",
             static_cast<int>(frames_per_second_),
-            average_duration_,
-            beep ? "!" : " ",
-            mouse_.left ? "!" : " ",
-            mouse_.dx);
+            average_duration_);
 
           const auto tpos = cv::Point(10, eye::sh - 10);
           cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
@@ -248,20 +297,13 @@ public:
         using duration = std::chrono::duration<float, std::milli>;
         const auto frames = static_cast<float>(frame_counter_);
         const auto frames_duration = std::chrono::duration_cast<duration>(tp0 - frame_time_point_);
-        average_duration_ = std::chrono::duration_cast<duration>(processing_duration_).count() / frames;
+        average_duration_ =
+          std::chrono::duration_cast<duration>(processing_duration_).count() / frames;
         frames_per_second_ = frames / (frames_duration.count() / 1000.0f);
         processing_duration_ = processing_duration_.zero();
         frame_time_point_ = tp0;
         frame_counter_ = 0;
       }
-    }
-  }
-
-  void play_sound() noexcept
-  {
-    if (audio_device_) {
-      SDL_QueueAudio(audio_device_, audio_buffer_, audio_length_);
-      SDL_PauseAudioDevice(audio_device_, 0);
     }
   }
 
@@ -274,7 +316,9 @@ public:
         try {
           cv::Mat image(eye::sw, eye::sh, CV_8UC4, data.get(), eye::sw * 4);
           cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
-          cv::imwrite(HORUS_HEROES_DIR "/0.png", image(cv::Rect(0, 0, eye::hw, eye::hh)));
+          //static int index = 0;
+          //cv::imwrite(std::format(HORUS_RES "/hero/{:02d}.png", index++), image);
+          //cv::imwrite(HORUS_RES "/ammo.png", image(cv::Rect(0, 0, eye::aw, eye::ah)));
         }
         catch (const std::exception& e) {
           log("could not create screenshot: {}", e.what());
@@ -321,10 +365,10 @@ private:
   bool menu_state_{ false };
   bool chat_state_{ false };
 
-  Uint32 audio_length_{ 0 };
-  Uint8* audio_buffer_{ nullptr };
-  SDL_AudioSpec audio_spec_{};
-  SDL_AudioDeviceID audio_device_{ 0 };
+  sound ping_;
+  sound warn_;
+  std::map<int, sound> ammo_;
+  int ammo_count_{ 8 };
 
   std::string stats_;
   clock::time_point frame_time_point_{ clock::now() };
@@ -395,7 +439,7 @@ static HHOOK hook = nullptr;
 
 static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
 {
-  if (wparam == WM_KEYDOWN && reinterpret_cast<LPKBDLLHOOKSTRUCT>(lparam)->vkCode == VK_F10) {
+  if (wparam == WM_KEYDOWN && reinterpret_cast<LPKBDLLHOOKSTRUCT>(lparam)->vkCode == VK_F12) {
     horus::plugin::screenshot_request.store(true, std::memory_order_release);
   }
   return CallNextHookEx(hook, code, wparam, lparam);
@@ -403,7 +447,7 @@ static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
 
 MODULE_EXPORT bool obs_module_load()
 {
-  logger = std::make_shared<horus::logger>(HORUS_LOGGER_LOG);
+  logger = std::make_shared<horus::logger>(HORUS_LOG);
   if (!horus::initialize()) {
     return false;
   }

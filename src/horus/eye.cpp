@@ -1,9 +1,11 @@
 #include "eye.hpp"
+#include <horus/log.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <tbb/parallel_for.h>
 #include <algorithm>
 #include <filesystem>
 #include <format>
+#include <numeric>
 #include <cassert>
 
 namespace horus {
@@ -55,6 +57,32 @@ constexpr unsigned rgba2gray(uint8_t* di) noexcept
   return 4;
 }
 
+void ammo2mask(uint8_t* si, uint8_t* di) noexcept
+{
+  int min = 0xFF;
+  int max = 0x00;
+  for (uint32_t y = 0; y < eye::ah; y++) {
+    for (uint32_t x = 0; x < eye::aw; x++) {
+      *di = static_cast<uint8_t>(si[0] * 0.299f + si[1] * 0.587f + si[2] * 0.114f);
+      if (*di < min) {
+        min = *di;
+      }
+      if (*di > max) {
+        max = *di;
+      }
+      di++;
+      si += 4;
+    }
+    si += (eye::sw - eye::aw) * 4;
+  }
+  di -= eye::aw * eye::ah;
+  const auto threshold = max > min ? static_cast<uint8_t>(min + (max - min) * 0.8f) : uint8_t(0xFF);
+  for (uint32_t i = 0; i < eye::aw * eye::ah; i++) {
+    *di = *di > threshold ? 0x01 : 0x00;
+    di++;
+  }
+}
+
 }  // namespace
 
 eye::eye()
@@ -62,12 +90,48 @@ eye::eye()
   hierarchy_.reserve(1024);
   contours_.reserve(1024);
   polygons_.reserve(1024);
+
+  std::vector<uint8_t> ammo_data;
+  ammo_data.resize(sw * sh * 4);
+  std::fill(ammo_data.begin(), ammo_data.end(), 0x00);
+  cv::Mat ammo_scan(sw, sh, CV_8UC4, ammo_data.data(), sw * 4);
+
+  for (std::size_t i = 0; i < ammo_masks_.size(); i++) {
+    auto bgra = cv::imread(std::format(HORUS_RES "/ammo/{:01d}.png", i), cv::IMREAD_UNCHANGED);
+    assert(bgra.cols == static_cast<int>(aw));
+    assert(bgra.rows == static_cast<int>(ah));
+    assert(bgra.channels() == 4);
+
+    cv::Mat rgba(cv::Size(aw, ah), CV_8UC4);
+    cv::cvtColor(bgra, rgba, cv::COLOR_BGRA2RGBA);
+
+    rgba.copyTo(ammo_scan(cv::Rect(0, 0, aw, ah)));
+    ammo2mask(ammo_data.data(), ammo_masks_[i].data());
+  }
+
+  selections_.push_back({ 0x402F1D, 308, 831, { 1, 0 }, "Ashe" });
+  selections_.push_back({ 0x402F1C, 361, 831, { 1, 0 }, "Bastion" });
+  selections_.push_back({ 0xE3E1BD, 429, 831, { 1, 1 }, "Cassidy" });
+  selections_.push_back({ 0x402E1E, 500, 831, { 1, 2 }, "Echo" });
+  selections_.push_back({ 0x402E1D, 566, 831, { 1, 3 }, "Genji" });
+  selections_.push_back({ 0x402F1C, 633, 831, { 1, 4 }, "Hanzo" });
+  selections_.push_back({ 0x402F1C, 716, 831, { 1, 5 }, "Junkrat" });
+  selections_.push_back({ 0x402F1D, 772, 831, { 1, 6 }, "Mei" });
+  selections_.push_back({ 0x402F1D, 813, 831, { 1, 7 }, "Pharah" });
+  selections_.push_back({ 0x402F1C, 332, 895, { 0, 0 }, "Reaper" });
+  selections_.push_back({ 0x402E1D, 390, 895, { 0, 1 }, "Sojourn" });
+  selections_.push_back({ 0x402F1D, 454, 895, { 0, 2 }, "Soldier: 76" });
+  selections_.push_back({ 0x402E1D, 521, 895, { 0, 3 }, "Sombra" });
+  selections_.push_back({ 0x402F1D, 622, 895, { 0, 4 }, "Symmetra" });
+  selections_.push_back({ 0x402F1C, 650, 895, { 0, 5 }, "Torbjörn" });
+  selections_.push_back({ 0x402E1E, 715, 895, { 0, 6 }, "Tracer" });
+  selections_.push_back({ 0x402F1C, 776, 895, { 0, 7 }, "Widowmaker" });
 }
 
 bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
 {
   // Vertical iteration range.
-  const auto range = tbb::blocked_range<size_t>(hh + 1, sh - 1, 64);
+  const auto range = tbb::blocked_range<size_t>(ah + 1, sh - 1, 64);
 
   // Draw outlines.
   std::memset(outlines_.data(), 0, sw * sh);
@@ -95,7 +159,6 @@ bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
   });
 
   // Remove single outline pixels and those who have too many outline pixels as neighbours.
-  // TODO: Restore old version that uses two passes if this is not enough.
   tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
     const auto rb = range.begin();
     const auto re = range.end();
@@ -119,6 +182,11 @@ bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
       ni += 2;
     }
   });
+
+  // Ignore frames with too many outline pixels.
+  if (std::reduce(std::begin(outlines_), std::end(outlines_), uint32_t(0)) > sw * sh / 64) {
+    return false;
+  }
 
   // Close small gaps in outlines.
   cv::morphologyEx(outlines_image_, outlines_image_, cv::MORPH_CLOSE, close_kernel_);
@@ -224,25 +292,86 @@ bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
   const auto dy = my * cm;
 
   cursor_interpolation_[0] = { x0 + dx, y0 + dy };
-  cursor_interpolation_[1] = { x0 + dx * 0.95f, y0 + dy * 0.95f };
+  cursor_interpolation_[1] = { x0 + dx * 0.96f, y0 + dy * 0.96f };
   cursor_interpolation_[2] = { x0 + dx * 0.90f, y0 + dy * 0.90f };
-  cursor_interpolation_[3] = { x0 + dx * 0.85f, y0 + dy * 0.85f };
-  cursor_interpolation_[4] = { x0 + dx * 0.80f, y0 + dy * 0.80f };
-  cursor_interpolation_[5] = { x0 + dx * 0.75f, y0 + dy * 0.75f };
-  cursor_interpolation_[6] = { x0 + dx * 0.70f, y0 + dy * 0.70f };
+  cursor_interpolation_[3] = { x0 + dx * 0.82f, y0 + dy * 0.82f };
+  cursor_interpolation_[4] = { x0 + dx * 0.72f, y0 + dy * 0.72f };
+  cursor_interpolation_[5] = { x0 + dx * 0.60f, y0 + dy * 0.60f };
+  cursor_interpolation_[6] = { x0 + dx * 0.46f, y0 + dy * 0.46f };
 
   // Check if the cursor is targeting an enemy.
   bool target = false;
   for (size_t i = 0, max = contours_.size(); i < max; i++) {
+    for (const auto& point : contours_[i]) {
+    }
+
     // Create convex hull.
     cv::convexHull(cv::Mat(contours_[i]), hull_);
 
     // Get bounding rect for the hull.
     const auto rect = cv::boundingRect(hull_);
 
-    // Raise hull to include the head.
+    // Find max left and right edges based on the top 20% of points and raise hull to include the head.
+    auto ml = static_cast<float>(dw);
+    auto mr = 0.0f;
     for (auto& point : hull_) {
+      if (point.y < rect.y + rect.height * 0.2f) {
+        if (point.x < ml) {
+          ml = point.x;
+        }
+        if (point.x > mr) {
+          mr = point.x;
+        }
+      }
       point.y -= rect.height / 9;
+    }
+
+    // Modify hull.
+    if (mr >= ml) {
+      // Max left and right difference.
+      auto md = mr - ml;
+
+      // Make sure the max left and right difference is at least 10% of the model width.
+      if (md < rect.width * 0.1f) {
+        ml -= (rect.width * 0.1f - md) / 2.0f;
+        mr += (rect.width * 0.1f - md) / 2.0f;
+        md = mr - ml;
+      }
+
+      // Make sure the max left and right difference is at most 10/30% of the model width.
+#if HERO_WIDOWMAKER
+      constexpr auto max_width = 0.1f;
+#else
+      constexpr auto max_width = 0.3f;
+#endif
+      if (md > rect.width * max_width) {
+        ml += (md - rect.width * max_width) / 2.0f;
+        mr -= (md - rect.width * max_width) / 2.0f;
+        md = mr - ml;
+      }
+
+      // Make sure the max left and right difference is at least 12 pixels wide.
+      if (md < 12.0f) {
+        ml -= (12.0f - md) / 2.0f;
+        mr += (12.0f - md) / 2.0f;
+        hull_.resize(4);
+        hull_[0].x = ml;
+        hull_[0].y = rect.y - rect.height / 9;
+        hull_[1].x = ml;
+        hull_[1].y = rect.y - rect.height / 9 + rect.height / 2;
+        hull_[2].x = mr;
+        hull_[2].y = rect.y - rect.height / 9;
+        hull_[3].x = mr;
+        hull_[3].y = rect.y - rect.height / 9 + rect.height / 2;
+      } else {
+        for (auto& point : hull_) {
+          if (point.x < ml) {
+            point.x = ml;
+          } else if (point.x > mr) {
+            point.x = mr;
+          }
+        }
+      }
     }
 
     // Check if target is acquired.
@@ -251,14 +380,17 @@ bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
         continue;
       }
       if (cv::pointPolygonTest(hull_, cip, false) > 0.0) {
+        if (!DRAW_OVERLAY) {
+          return true;
+        }
         target = true;
         break;
       }
     }
 
+    // Store hull as contour for the draw call.
     contours_[i] = std::move(hull_);
   }
-  cursor_interpolation_buffer_ = std::move(cursor_interpolation_);
   return target;
 }
 
@@ -359,6 +491,104 @@ void eye::draw_reticle(uint8_t* image, uint32_t oc, uint32_t ic) noexcept
     // Line 6.
     set(di, ooc, 4);
   }
+}
+
+std::pair<int, float> eye::ammo(uint8_t* image) noexcept
+{
+  auto count = -1;
+  auto error = 1.0f;
+  ammo2mask(image, ammo_mask_.data());
+  for (int i = 0; i < ammo_masks_.size(); i++) {
+    uint32_t mismatches = 0;
+    auto si = ammo_mask_.data();
+    auto ci = ammo_masks_[i].data();
+    for (auto j = 0; j < aw * ah; j++) {
+      if (*si != *ci) {
+        mismatches++;
+      }
+      si++;
+      ci++;
+    }
+    if (const auto e = static_cast<float>(mismatches) / (aw * ah); e < error) {
+      count = i;
+      error = e;
+    }
+  }
+#if DRAW_OVERLAY && 0
+  for (uint32_t y = 0; y < ah; y++) {
+    for (uint32_t x = 0; x < aw; x++) {
+      if (ammo_mask_[y * aw + x]) {
+        image[(y * sw + x) * 4 + 0] = 0xFF;
+        image[(y * sw + x) * 4 + 1] = 0xFF;
+        image[(y * sw + x) * 4 + 2] = 0xFF;
+      } else {
+        image[(y * sw + x) * 4 + 0] = 0x00;
+        image[(y * sw + x) * 4 + 1] = 0x00;
+        image[(y * sw + x) * 4 + 2] = 0x00;
+      }
+    }
+  }
+#endif
+  return { count, error };
+}
+
+std::optional<std::pair<uint16_t, uint16_t>> eye::hero(uint8_t* image) noexcept
+{
+  //if (!selections_.empty()) {
+  //  static size_t i = 0;
+  //  if (i >= selections_.size()) {
+  //    i = 0;
+  //  }
+  //  const auto& selection = selections_[i++];
+  //  const auto p = image + selection.y * sw * 4 + selection.x * 4;
+  //  log("0x{:02X}{:02X}{:02X} {}", p[0], p[1], p[2], selection.name);
+  //}
+
+  std::optional<std::pair<uint16_t, uint16_t>> result;
+  for (const auto& selection : selections_) {
+    const auto r = static_cast<uint8_t>(selection.c >> 16 & 0xFF);
+    const auto g = static_cast<uint8_t>(selection.c >> 8 & 0xFF);
+    const auto b = static_cast<uint8_t>(selection.c & 0xFF);
+    const auto p = image + selection.y * sw * 4 + selection.x * 4;
+    if (r == p[0] && g == p[1] && b == p[2]) {
+      if (result) {
+        return std::nullopt;
+      }
+      result = selection.arrows;
+    }
+  }
+  return result;
+}
+
+std::optional<cv::Point> eye::find() noexcept
+{
+  auto cx = 0;
+  auto cy = 0;
+  for (const auto& contour : contours_) {
+    const auto count = contour.size();
+    if (!count) {
+      continue;
+    }
+    auto ax = 0;
+    auto ay = 0;
+    for (const auto& point : contour) {
+      ax += point.x;
+      ay += point.y;
+    }
+    ax /= count;
+    ay /= count;
+
+    constexpr auto cw = static_cast<int>(sw / 2);
+    constexpr auto ch = static_cast<int>(sh / 2);
+    if (std::abs(ax - cw) < std::abs(cx - cw)) {
+      cx = ax;
+      cy = ay - cv::boundingRect(contour).height / 4;
+    }
+  }
+  if (cx) {
+    return cv::Point(cx, cy);
+  }
+  return std::nullopt;
 }
 
 void eye::desaturate(uint8_t* image) noexcept

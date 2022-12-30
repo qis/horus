@@ -22,22 +22,16 @@ public:
   // Scan offset to display (vertical).
   static constexpr uint32_t sy = (dh - sh) / 2;  // 28
 
-  // Hero portrait offset and size.
-  static constexpr uint32_t hx = (2560 - 1920) / 2 + 71;
-  static constexpr uint32_t hy = 932;
-  static constexpr uint32_t hw = 64;
-  static constexpr uint32_t hh = 64;
-
-  // Chat input box offset and size.
-  static constexpr uint32_t cx = (2560 - 1920) / 2 + 55;
-  static constexpr uint32_t cy = 664;
-  static constexpr uint32_t cw = 96;
-  static constexpr uint32_t ch = 32;
+  // Ammo offset and size.
+  static constexpr uint32_t ax = (2560 - 1920) / 2 + 1813;
+  static constexpr uint32_t ay = 966;
+  static constexpr uint32_t aw = 14;
+  static constexpr uint32_t ah = 19;
 
   // Overlay color (magenta, minimum red, maximum green, minimum blue).
-  // - 0xC217BF scoped, close
-  // - 0xCA3FD9 scoped, distant
-  // - 0xA080A0 scoped, recommended
+  // - 0xCA18C4 clean
+  // - 0xE238EE scoped
+  // - 0xA080A0 works well for reaper
   static constexpr uint32_t oc = 0xA080A0;
 
   // Cursor interpolation multiplier (increase when over-shooting the target).
@@ -51,6 +45,18 @@ public:
 
   // Connect polygons, which have points close to each other.
   static constexpr double polygon_connect_distance = 16.0;
+
+  // Selection pixel color.
+  static constexpr uint32_t sc = 0xFFFFED;
+
+  // Selection pixel scan position and the @ref hero call return value.
+  struct selection {
+    uint32_t c{ 0 };
+    uint32_t x{ 0 };
+    uint32_t y{ 0 };
+    std::pair<uint16_t, uint16_t> arrows;
+    std::string name;
+  };
 
   eye();
   eye(eye&& other) = delete;
@@ -89,6 +95,23 @@ public:
   ///
   void draw_reticle(uint8_t* image, uint32_t oc, uint32_t ic) noexcept;
 
+  /// Compares the aw:ah+0+0 part of the image to available ammo count images.
+  /// Error values below 0.1 usually mean that the count is correct.
+  ///
+  /// @param image Image used in the last @ref scan call.
+  ///
+  /// @return Returns the detected ammo count or -1 and an error value between 0 and 1.
+  std::pair<int, float> ammo(uint8_t* image) noexcept;
+
+  /// Searches for current hero in the selection screen.
+  ///
+  /// @param image Image used in the last @ref scan call.
+  ///
+  /// @return Returns the number of down and left arrow presses required to reach Reaper.
+  std::optional<std::pair<uint16_t, uint16_t>> hero(uint8_t* image) noexcept;
+
+  std::optional<cv::Point> find() noexcept;
+
   /// Desaturates the image.
   ///
   /// @param image Input and output image (sw x sh 4 byte rgba).
@@ -114,9 +137,12 @@ private:
   std::vector<size_t> polygons_fill_count_;
   std::vector<cv::Point> hull_;
 
-  std::array<cv::Point2f, 7> cursor_interpolation_;
-  std::array<cv::Point2f, 7> cursor_interpolation_buffer_;
-  std::array<bool, 7> cursor_interpolation_target_;
+  std::array<cv::Point2f, 7> cursor_interpolation_{};
+
+  std::array<uint8_t, aw * ah> ammo_mask_;
+  std::array<std::array<uint8_t, aw * ah>, 9> ammo_masks_;
+
+  std::vector<selection> selections_;
 };
 
 }  // namespace horus

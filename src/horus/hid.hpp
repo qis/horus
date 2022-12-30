@@ -21,6 +21,7 @@ public:
   struct keybd {
     bool q;
     bool e;
+    bool c;
     bool shift;
     bool space;
     bool control;

@@ -20,7 +20,7 @@ add_library(horus SHARED ${headers} ${sources} src/main.manifest)
 target_include_directories(horus PRIVATE src src/rock/src)
 target_compile_definitions(horus PRIVATE HORUS_EXPORTS)
 
-target_compile_features(horus PUBLIC cxx_std_20)
+target_compile_features(horus PUBLIC cxx_std_23)
 target_compile_definitions(horus PUBLIC HORUS_DEBUG=$<IF:$<CONFIG:Release>,0,1>)
 target_compile_definitions(horus PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_definitions(horus PUBLIC WINVER=0x0A00 _WIN32_WINNT=0x0A00)
@@ -42,7 +42,6 @@ target_link_libraries(horus PUBLIC TBB::tbb)
 find_package(OpenCV REQUIRED)
 target_link_libraries(horus PUBLIC
   opencv::core
-  opencv::highgui
   opencv::imgcodecs
   opencv::imgproc)
 

@@ -11,66 +11,9 @@ public:
 
   hitscan(eye& eye, rock::client& client) noexcept : eye_(eye), client_(client) {}
 
-  void scan(
-    std::uint8_t* data,
-    const hid::keybd& keybd,
-    const hid::mouse& mouse,
-    clock::time_point frame) noexcept
+  void scan(std::uint8_t* data, const hid::keybd& keybd, const hid::mouse& mouse, clock::time_point frame) noexcept
   {
     using namespace std::chrono_literals;
-
-#if HERO_JUNKRAT
-    const auto down_state = down_state_;
-    down_state_ = mouse.down;
-
-    const auto right_state = right_state_;
-    right_state_ = mouse.right;
-
-    // Detonate mine with the secondary jump button.
-    if (!down_state && down_state_) {
-      client_.mask(rock::button::up, 7ms);
-      return;
-    }
-
-    // Detonate mine while primary fire is pressed.
-    if ((mouse.down || mouse.left) && frame >= mine_blocked_) {
-      client_.mask(rock::button::up, 128ms);
-      mine_blocked_ = frame + 64ms;
-      return;
-    }
-
-    // Release secondary fire when mine is thrown and give some time to release primary fire.
-    if (!right_state && right_state_) {
-      client_.mask(rock::button::up, 0ms);
-      mine_blocked_ = frame + 256ms;
-      return;
-    }
-
-    return;
-#endif
-
-#if HERO_TRACER
-    const auto down_state = down_state_;
-    down_state_ = mouse.down;
-
-    if (!down_state && down_state_) {
-      client_.mask(rock::button::right, 7ms);
-      move_blocked_ = frame + 32ms;
-      move_ = true;
-    } else if (move_ && frame > move_blocked_) {
-      client_.move(1, 4'450, 0);
-      move_ = false;
-    }
-
-    const auto shift_state = shift_state_;
-    shift_state_ = keybd.shift;
-
-    if (!shift_state && shift_state_) {
-      client_.mask(rock::button::up, 7ms);
-    }
-
-    return;
-#endif
 
     // Check if target is acquired.
     const auto target = eye_.scan(data, mouse.dx, mouse.dy);
@@ -86,7 +29,7 @@ public:
       if (keybd.menu || mouse.left || mouse.right) {
         enabled_ = true;
         if (mouse.left) {
-          hitscan_blocked_ = frame + 128ms;
+          blocked_ = frame + 128ms;
         }
       }
       return;
@@ -100,14 +43,127 @@ public:
       enabled_ = false;
       return;
     }
-#else
-#if HERO_WIDOWMAKER
-    const auto right_state = right_state_;
-    right_state_ = mouse.right;
-    if (!right_state && right_state_) {
-      hitscan_blocked_ = frame + 1350ms;
+#elif HERO_SOLDIER
+    // How long it takes for a round to change.
+    constexpr auto round_interval = 96ms;
+
+    // How long to wait between recoil compensation injects.
+    constexpr auto compensate_interval = 16ms;
+
+    // How much to move the mouse for each round that has to be compensated.
+    constexpr auto compensate_round = int16_t(59);
+
+    // How often to move the mouse between rounds.
+    constexpr auto compensate_count = (round_interval - compensate_interval) / compensate_interval;
+
+    // Maximum mouse movement per update.
+    constexpr auto compensate_max = compensate_round / compensate_count;
+
+    // Update fire state, reload state and ammo count.
+    const auto fire_state = fire_state_;
+    fire_state_ = mouse.left;
+
+    const auto reload_state = reload_state_;
+    reload_state_ = keybd.r;
+
+    const auto ammo_count = ammo_count_;
+    if (const auto [tc, te, oc, oe] = eye_.ammo(data); oe < 0.1f) {
+      auto ac = oc;
+      if (te < 0.1f) {
+        ac += tc * 10;
+      } else if (te < 0.2f) {
+        ac += ammo_count_ / 10 * 10;
+      }
+      if (ac == 30 || ac < ammo_count_ || ammo_count_ == 0) {
+        ammo_count_ = ac;
+      }
     }
-#endif
+
+    if ((!fire_state && fire_state_) || (!reload_state && reload_state_)) {
+      compensate_next_ = frame + compensate_interval;
+      ammo_compensated_ = 0;
+      ammo_start_ = ammo_count_ ? ammo_count_ : 30;
+    } else if (fire_state && !fire_state_) {
+      compensate_ = 0;
+    } else if (ammo_count < 30 && ammo_count_ == 30) {
+      ammo_compensated_ = 0;
+      ammo_start_ = 30;
+    }
+
+    // Set aim correction.
+    int16_t correction = 0;
+    if (fire_state_ && ammo_count_ > 0 && ammo_count_ < 30) {
+      if (const auto pt = eye_.find()) {
+        // Center of screen position.
+        constexpr auto psx = static_cast<int>(eye::sw / 2);
+
+        // Mouse position.
+        const auto pmx = psx + static_cast<int>(mouse.dx);
+
+        // Target position.
+        const auto ptx = pt->x;
+
+        // Distance between center and mouse.
+        const auto smx = std::abs(psx - pmx);
+
+        // Distance between center and target.
+        const auto stx = std::abs(psx - ptx);
+
+        // Distance between target and mouse.
+        const auto tmx = std::abs(ptx - pmx);
+
+        if (tmx > 3) {
+          if (tmx < 9) {
+            // Snap to target if the distance between target and mouse is small.
+            correction = static_cast<int16_t>(ptx - pmx) * 2;
+          } else if (tmx < 64) {
+            if ((pmx - 3 < psx && ptx < pmx - 3) || (pmx + 3 > psx && ptx > pmx + 3)) {
+              // Move to target if the target is further from the center, than the mouse.
+              correction = static_cast<int16_t>(ptx - pmx);
+            } else {
+              // Adjust aim if the target is closer to the center, than the mouse.
+              correction = static_cast<int16_t>(ptx - pmx) / 2;
+            }
+          }
+        }
+      }
+    }
+
+    // Perform scheduled recoil compensation.
+    if (frame > compensate_next_) {
+      if (compensate_ > 0) {
+        if (compensate_ < compensate_max) {
+          client_.move(1, correction, compensate_);
+          compensate_ = 0;
+        } else if (compensate_ > compensate_max * 3) {
+          client_.move(1, correction, compensate_max * 2);
+          compensate_ -= compensate_max * 2;
+        } else {
+          client_.move(1, correction, compensate_max);
+          compensate_ -= compensate_max;
+        }
+      } else if (correction != 0) {
+        client_.move(1, correction, 0);
+      }
+      compensate_next_ = frame + compensate_interval;
+    }
+
+    // Schedule recoil compensation.
+    if (ammo_count_ < ammo_count && ammo_count_ < ammo_start_) {
+      const auto bullets_fired = ammo_start_ - ammo_count_;
+      for (auto i = ammo_compensated_; i < bullets_fired; i++) {
+        if (i > 9) {
+          compensate_ += compensate_round;
+        } else if (i > 1) {
+          compensate_ += compensate_round;
+        }
+        ammo_compensated_++;
+      }
+      compensate_next_ = frame + compensate_interval;
+    }
+
+    return;
+#else
     // Skip when right mouse button is not pressed.
     if (!mouse.right) {
       return;
@@ -115,7 +171,7 @@ public:
 #endif
 
     auto set = false;
-    if (target && frame >= hitscan_blocked_) {
+    if (target && frame >= blocked_) {
       client_.lock(32ms);
       client_.mask(rock::button::up, 7ms);
       set = true;
@@ -123,14 +179,8 @@ public:
 
     // Block execution to prevent left mouse button spam.
     if (mouse.left || set) {
-#if HERO_WIDOWMAKER
-      hitscan_blocked_ = frame + 1350ms;
-#else
-      hitscan_blocked_ = frame + 128ms;
-#endif
+      blocked_ = frame + 128ms;
     }
-
-    return;
 
     // Aimbot template.
     //
@@ -156,31 +206,21 @@ public:
 private:
   eye& eye_;
   rock::client& client_;
-  clock::time_point hitscan_blocked_{ clock::now() };
+  clock::time_point blocked_{};
   bool enabled_{ true };
-  bool ready_{ false };
 
 #if HERO_SUPPORT
   bool shift_state_{ false };
-#endif
+#elif HERO_SOLDIER
+  bool fire_state_{ false };
+  bool reload_state_{ false };
 
-#if HERO_JUNKRAT
-  bool down_state_{ false };
-  bool right_state_{ false };
-  clock::time_point mine_blocked_{ clock::now() };
-#endif
+  unsigned ammo_count_{ 0 };
+  unsigned ammo_start_{ 0 };
+  unsigned ammo_compensated_{ 0 };
 
-#if HERO_TRACER
-  bool down_state_{ false };
-  bool shift_state_{ false };
-
-  bool move_{ false };
-  clock::time_point move_blocked_{ clock::now() };
-#endif
-
-#if HERO_WIDOWMAKER
-  bool right_state_{ false };
-  unsigned target_frame_ = 0;
+  int16_t compensate_{ 0 };
+  clock::time_point compensate_next_{};
 #endif
 };
 

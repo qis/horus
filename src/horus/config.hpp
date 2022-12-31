@@ -2,9 +2,7 @@
 
 #define DRAW_OVERLAY 0
 #define HERO_SUPPORT 0
-#define HERO_JUNKRAT 0
-#define HERO_TRACER 0
-#define HERO_WIDOWMAKER 0
+#define HERO_SOLDIER 1
 
 #define HORUS_LOG "C:/OBS/horus.log"
 #define HORUS_RES "C:/OBS/horus/res"

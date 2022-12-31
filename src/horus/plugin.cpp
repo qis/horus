@@ -123,11 +123,6 @@ public:
     }
 
     obs_leave_graphics();
-
-    ping_ = { HORUS_RES "/ping.wav" };
-    warn_ = { HORUS_RES "/warn.wav" };
-    ammo_[0] = { HORUS_RES "/0.wav" };
-    ammo_[1] = { HORUS_RES "/1.wav" };
   }
 
   plugin(plugin&& other) = delete;
@@ -212,30 +207,29 @@ public:
         hid_.get(keybd_);
         hid_.get(mouse_);
 
-        // Adjust for sensitivity.
-        if (HERO_WIDOWMAKER) {
-          mouse_.dx /= 6;
-          mouse_.dy /= 6;
-        } else {
-          mouse_.dx /= 3;
-          mouse_.dy /= 3;
+        // Get average mouse movement.
+        mouse_buffer_[mouse_buffer_index_][0] = mouse_.dx;
+        mouse_buffer_[mouse_buffer_index_][1] = mouse_.dy;
+        if (++mouse_buffer_index_ >= mouse_buffer_.size()) {
+          mouse_buffer_index_ = 0;
         }
+        mouse_.dx = 0;
+        mouse_.dy = 0;
+        for (const auto& e : mouse_buffer_) {
+          mouse_.dx += e[0];
+          mouse_.dy += e[1];
+        }
+        mouse_.dx /= static_cast<int32_t>(mouse_buffer_.size());
+        mouse_.dy /= static_cast<int32_t>(mouse_buffer_.size());
+
+        // Adjust for sensitivity.
+        // Shot too late means dx is too small - divide by smaller value.
+        // Shot too soon means dx is too large - divide by larger value.
+        mouse_.dx /= 5;
+        mouse_.dy /= 5;
 
         // Scan using hero.
         hero_->scan(data, keybd_, mouse_, tp0);
-
-        // Scan ammo and warn when it's running out soon.
-        if (const auto [ammo_count, error] = eye_.ammo(data); error < 0.1f) {
-          if (error < 0.01f || (ammo_count_ == 0 && ammo_count == 8) || (ammo_count_ > 0 && ammo_count == ammo_count_ - 1))
-          {
-            if (ammo_count_ != ammo_count) {
-              if (auto it = ammo_.find(ammo_count); it != ammo_.end()) {
-                it->second.play();
-              }
-            }
-            ammo_count_ = ammo_count;
-          }
-        }
 
         // Measure scan duration.
         tp1 = clock::now();
@@ -244,7 +238,6 @@ public:
         bool screenshot_expected = true;
         if (screenshot_request.compare_exchange_weak(screenshot_expected, false)) {
           screenshot(data);
-          ping_.play();
         }
 
         // Draw overlay.
@@ -297,8 +290,8 @@ public:
         using duration = std::chrono::duration<float, std::milli>;
         const auto frames = static_cast<float>(frame_counter_);
         const auto frames_duration = std::chrono::duration_cast<duration>(tp0 - frame_time_point_);
-        average_duration_ =
-          std::chrono::duration_cast<duration>(processing_duration_).count() / frames;
+        const auto processing_duration = std::chrono::duration_cast<duration>(processing_duration_);
+        average_duration_ = processing_duration.count() / frames;
         frames_per_second_ = frames / (frames_duration.count() / 1000.0f);
         processing_duration_ = processing_duration_.zero();
         frame_time_point_ = tp0;
@@ -316,9 +309,8 @@ public:
         try {
           cv::Mat image(eye::sw, eye::sh, CV_8UC4, data.get(), eye::sw * 4);
           cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
-          //static int index = 0;
-          //cv::imwrite(std::format(HORUS_RES "/hero/{:02d}.png", index++), image);
-          //cv::imwrite(HORUS_RES "/ammo.png", image(cv::Rect(0, 0, eye::aw, eye::ah)));
+          cv::imwrite(HORUS_RES "/screenshot.png", image);
+          //cv::imwrite(HORUS_RES "/ammo/scan.png", image(cv::Rect(0, 0, eye::aw, eye::ah)));
         }
         catch (const std::exception& e) {
           log("could not create screenshot: {}", e.what());
@@ -365,10 +357,8 @@ private:
   bool menu_state_{ false };
   bool chat_state_{ false };
 
-  sound ping_;
-  sound warn_;
-  std::map<int, sound> ammo_;
-  int ammo_count_{ 8 };
+  std::array<std::array<int32_t, 2>, 3> mouse_buffer_;
+  std::size_t mouse_buffer_index_{ 0 };
 
   std::string stats_;
   clock::time_point frame_time_point_{ clock::now() };

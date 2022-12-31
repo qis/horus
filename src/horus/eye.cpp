@@ -97,7 +97,8 @@ eye::eye()
   cv::Mat ammo_scan(sw, sh, CV_8UC4, ammo_data.data(), sw * 4);
 
   for (std::size_t i = 0; i < ammo_masks_.size(); i++) {
-    auto bgra = cv::imread(std::format(HORUS_RES "/ammo/{:01d}.png", i), cv::IMREAD_UNCHANGED);
+    auto bgra =
+      cv::imread(std::format(HORUS_RES "/ammo/{:01d}.png", ammo_value[i]), cv::IMREAD_UNCHANGED);
     assert(bgra.cols == static_cast<int>(aw));
     assert(bgra.rows == static_cast<int>(ah));
     assert(bgra.channels() == 4);
@@ -108,24 +109,6 @@ eye::eye()
     rgba.copyTo(ammo_scan(cv::Rect(0, 0, aw, ah)));
     ammo2mask(ammo_data.data(), ammo_masks_[i].data());
   }
-
-  selections_.push_back({ 0x402F1D, 308, 831, { 1, 0 }, "Ashe" });
-  selections_.push_back({ 0x402F1C, 361, 831, { 1, 0 }, "Bastion" });
-  selections_.push_back({ 0xE3E1BD, 429, 831, { 1, 1 }, "Cassidy" });
-  selections_.push_back({ 0x402E1E, 500, 831, { 1, 2 }, "Echo" });
-  selections_.push_back({ 0x402E1D, 566, 831, { 1, 3 }, "Genji" });
-  selections_.push_back({ 0x402F1C, 633, 831, { 1, 4 }, "Hanzo" });
-  selections_.push_back({ 0x402F1C, 716, 831, { 1, 5 }, "Junkrat" });
-  selections_.push_back({ 0x402F1D, 772, 831, { 1, 6 }, "Mei" });
-  selections_.push_back({ 0x402F1D, 813, 831, { 1, 7 }, "Pharah" });
-  selections_.push_back({ 0x402F1C, 332, 895, { 0, 0 }, "Reaper" });
-  selections_.push_back({ 0x402E1D, 390, 895, { 0, 1 }, "Sojourn" });
-  selections_.push_back({ 0x402F1D, 454, 895, { 0, 2 }, "Soldier: 76" });
-  selections_.push_back({ 0x402E1D, 521, 895, { 0, 3 }, "Sombra" });
-  selections_.push_back({ 0x402F1D, 622, 895, { 0, 4 }, "Symmetra" });
-  selections_.push_back({ 0x402F1C, 650, 895, { 0, 5 }, "Torbjörn" });
-  selections_.push_back({ 0x402E1E, 715, 895, { 0, 6 }, "Tracer" });
-  selections_.push_back({ 0x402F1C, 776, 895, { 0, 7 }, "Widowmaker" });
 }
 
 bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
@@ -493,71 +476,59 @@ void eye::draw_reticle(uint8_t* image, uint32_t oc, uint32_t ic) noexcept
   }
 }
 
-std::pair<int, float> eye::ammo(uint8_t* image) noexcept
+std::tuple<unsigned, float, unsigned, float> eye::ammo(uint8_t* image) noexcept
 {
-  auto count = -1;
-  auto error = 1.0f;
   ammo2mask(image, ammo_mask_.data());
-  for (int i = 0; i < ammo_masks_.size(); i++) {
-    uint32_t mismatches = 0;
+
+  auto tens_count = 0u;
+  auto tens_error = 1.0f;
+
+  for (auto i : { a10, a21, a30 }) {
+    auto mismatches = 0u;
     auto si = ammo_mask_.data();
     auto ci = ammo_masks_[i].data();
-    for (auto j = 0; j < aw * ah; j++) {
-      if (*si != *ci) {
-        mismatches++;
+    for (uint32_t y = 0; y < ah; y++) {
+      for (uint32_t x = 0; x < aw / 2; x++) {
+        if (*si != *ci) {
+          mismatches++;
+        }
+        si++;
+        ci++;
       }
-      si++;
-      ci++;
+      si += aw - aw / 2;
+      ci += aw - aw / 2;
     }
-    if (const auto e = static_cast<float>(mismatches) / (aw * ah); e < error) {
-      count = i;
-      error = e;
+    if (const auto e = static_cast<float>(mismatches) / (aw / 2 * ah); e < tens_error) {
+      tens_count = ammo_tens_value[i];
+      tens_error = e;
     }
   }
-#if DRAW_OVERLAY && 0
-  for (uint32_t y = 0; y < ah; y++) {
-    for (uint32_t x = 0; x < aw; x++) {
-      if (ammo_mask_[y * aw + x]) {
-        image[(y * sw + x) * 4 + 0] = 0xFF;
-        image[(y * sw + x) * 4 + 1] = 0xFF;
-        image[(y * sw + x) * 4 + 2] = 0xFF;
-      } else {
-        image[(y * sw + x) * 4 + 0] = 0x00;
-        image[(y * sw + x) * 4 + 1] = 0x00;
-        image[(y * sw + x) * 4 + 2] = 0x00;
-      }
-    }
-  }
-#endif
-  return { count, error };
-}
 
-std::optional<std::pair<uint16_t, uint16_t>> eye::hero(uint8_t* image) noexcept
-{
-  //if (!selections_.empty()) {
-  //  static size_t i = 0;
-  //  if (i >= selections_.size()) {
-  //    i = 0;
-  //  }
-  //  const auto& selection = selections_[i++];
-  //  const auto p = image + selection.y * sw * 4 + selection.x * 4;
-  //  log("0x{:02X}{:02X}{:02X} {}", p[0], p[1], p[2], selection.name);
-  //}
+  auto ones_count = 0u;
+  auto ones_error = 1.0f;
 
-  std::optional<std::pair<uint16_t, uint16_t>> result;
-  for (const auto& selection : selections_) {
-    const auto r = static_cast<uint8_t>(selection.c >> 16 & 0xFF);
-    const auto g = static_cast<uint8_t>(selection.c >> 8 & 0xFF);
-    const auto b = static_cast<uint8_t>(selection.c & 0xFF);
-    const auto p = image + selection.y * sw * 4 + selection.x * 4;
-    if (r == p[0] && g == p[1] && b == p[2]) {
-      if (result) {
-        return std::nullopt;
+  for (auto i : { a21, a22, a23, a24, a25, a26, a27, a28, a29, a30 }) {
+    auto mismatches = 0u;
+    auto si = ammo_mask_.data();
+    auto ci = ammo_masks_[i].data();
+    for (uint32_t y = 0; y < ah; y++) {
+      si += aw / 2;
+      ci += aw / 2;
+      for (uint32_t x = aw / 2; x < aw; x++) {
+        if (*si != *ci) {
+          mismatches++;
+        }
+        si++;
+        ci++;
       }
-      result = selection.arrows;
+    }
+    if (const auto e = static_cast<float>(mismatches) / ((aw - aw / 2) * ah); e < ones_error) {
+      ones_count = ammo_ones_value[i];
+      ones_error = e;
     }
   }
-  return result;
+
+  return { tens_count, tens_error, ones_count, ones_error };
 }
 
 std::optional<cv::Point> eye::find() noexcept

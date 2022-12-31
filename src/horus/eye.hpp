@@ -13,20 +13,20 @@ public:
   // Display and scan sizes (must be synchronized with res/horus.effect).
   static constexpr uint32_t dw = 2560;  // display width
   static constexpr uint32_t dh = 1080;  // display height
+  static constexpr uint32_t gw = 1920;  // game width
+  static constexpr uint32_t gh = 1080;  // game height
   static constexpr uint32_t sw = 1024;  // scan width
   static constexpr uint32_t sh = 1024;  // scan height
 
-  // Scan offset to display (horizontal).
-  static constexpr uint32_t sx = (dw - sw) / 2;  // 768
+  // Scan offset to display.
+  static constexpr uint32_t sx = (dw - sw) / 2;
+  static constexpr uint32_t sy = (dh - sh) / 2;
 
-  // Scan offset to display (vertical).
-  static constexpr uint32_t sy = (dh - sh) / 2;  // 28
-
-  // Ammo offset and size.
-  static constexpr uint32_t ax = (2560 - 1920) / 2 + 1813;
-  static constexpr uint32_t ay = 966;
-  static constexpr uint32_t aw = 14;
-  static constexpr uint32_t ah = 19;
+  // Ammo offset to display and size.
+  static constexpr uint32_t ax = (dw - gw) / 2 + 1784;
+  static constexpr uint32_t ay = (dh - gh) / 2 + 968;
+  static constexpr uint32_t aw = 28;
+  static constexpr uint32_t ah = 20;
 
   // Overlay color (magenta, minimum red, maximum green, minimum blue).
   // - 0xCA18C4 clean
@@ -100,15 +100,9 @@ public:
   ///
   /// @param image Image used in the last @ref scan call.
   ///
-  /// @return Returns the detected ammo count or -1 and an error value between 0 and 1.
-  std::pair<int, float> ammo(uint8_t* image) noexcept;
-
-  /// Searches for current hero in the selection screen.
-  ///
-  /// @param image Image used in the last @ref scan call.
-  ///
-  /// @return Returns the number of down and left arrow presses required to reach Reaper.
-  std::optional<std::pair<uint16_t, uint16_t>> hero(uint8_t* image) noexcept;
+  /// @return Returns the detected tens and ones ammo count or 0
+  /// followed by the corresponding error value between 0.0f and 1.0f.
+  std::tuple<unsigned, float, unsigned, float> ammo(uint8_t* image) noexcept;
 
   std::optional<cv::Point> find() noexcept;
 
@@ -140,9 +134,12 @@ private:
   std::array<cv::Point2f, 7> cursor_interpolation_{};
 
   std::array<uint8_t, aw * ah> ammo_mask_;
-  std::array<std::array<uint8_t, aw * ah>, 9> ammo_masks_;
+  std::array<std::array<uint8_t, aw * ah>, 11> ammo_masks_;
 
-  std::vector<selection> selections_;
+  enum ammo_index : std::size_t { a10, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30 };
+  static constexpr std::array<size_t, 11> ammo_value{ 10, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30 };
+  static constexpr std::array<size_t, 11> ammo_tens_value{ 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3 };
+  static constexpr std::array<size_t, 11> ammo_ones_value{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0 };
 };
 
 }  // namespace horus

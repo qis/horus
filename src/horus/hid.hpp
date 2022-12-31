@@ -22,6 +22,7 @@ public:
     bool q;
     bool e;
     bool c;
+    bool r;
     bool shift;
     bool space;
     bool control;

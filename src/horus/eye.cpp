@@ -259,122 +259,12 @@ std::optional<eye::target> eye::scan(const uint8_t* image, int32_t mx, int32_t m
     const auto aw = ar - al;
     const auto ah = ab - at;
     centers_[i] = cv::Point(ax / size, at + ah / 16);
-    if (const auto distance = cv::norm(mouse - centers_[i]); !result || distance < result->distance) {
-      result.emplace(centers_[i], distance, aw, ah);
+    if (const auto d = cv::norm(mouse - centers_[i]); !result || d < result->distance) {
+      result.emplace(centers_[i], d, aw, ah);
     }
   }
 
   return result;
-  /*
-  // Create cursor interpolation.
-  constexpr auto x0 = sw / 2.0f;
-  constexpr auto y0 = sh / 2.0f;
-
-  const auto dx = mx * cm;
-  const auto dy = my * cm;
-
-  cursor_interpolation_[0] = { x0 + dx, y0 + dy };
-  cursor_interpolation_[1] = { x0 + dx * 0.96f, y0 + dy * 0.96f };
-  cursor_interpolation_[2] = { x0 + dx * 0.90f, y0 + dy * 0.90f };
-  cursor_interpolation_[3] = { x0 + dx * 0.82f, y0 + dy * 0.82f };
-  cursor_interpolation_[4] = { x0 + dx * 0.72f, y0 + dy * 0.72f };
-  cursor_interpolation_[5] = { x0 + dx * 0.60f, y0 + dy * 0.60f };
-  cursor_interpolation_[6] = { x0 + dx * 0.46f, y0 + dy * 0.46f };
-
-  // Check if the cursor is targeting an enemy.
-  std::optional<cv::Point> target;
-  for (size_t i = 0, max = contours_.size(); i < max; i++) {
-    for (const auto& point : contours_[i]) {
-    }
-
-    // Create convex hull.
-    cv::convexHull(cv::Mat(contours_[i]), hull_);
-
-    // Get bounding rect for the hull.
-    const auto rect = cv::boundingRect(hull_);
-
-    // Find max left and right edges based on the top 20% of points and raise hull to include the head.
-    auto ml = static_cast<float>(dw);
-    auto mr = 0.0f;
-    for (auto& point : hull_) {
-      if (point.y < rect.y + rect.height * 0.2f) {
-        if (point.x < ml) {
-          ml = point.x;
-        }
-        if (point.x > mr) {
-          mr = point.x;
-        }
-      }
-      point.y -= rect.height / 9;
-    }
-
-    // Modify hull.
-    if (mr >= ml) {
-      // Max left and right difference.
-      auto md = mr - ml;
-
-      // Make sure the max left and right difference is at least 10% of the model width.
-      if (md < rect.width * 0.1f) {
-        ml -= (rect.width * 0.1f - md) / 2.0f;
-        mr += (rect.width * 0.1f - md) / 2.0f;
-        md = mr - ml;
-      }
-
-      // Make sure the max left and right difference is at most 10/30% of the model width.
-#if HERO_WIDOWMAKER
-      constexpr auto max_width = 0.1f;
-#else
-      constexpr auto max_width = 0.3f;
-#endif
-      if (md > rect.width * max_width) {
-        ml += (md - rect.width * max_width) / 2.0f;
-        mr -= (md - rect.width * max_width) / 2.0f;
-        md = mr - ml;
-      }
-
-      // Make sure the max left and right difference is at least 12 pixels wide.
-      if (md < 12.0f) {
-        ml -= (12.0f - md) / 2.0f;
-        mr += (12.0f - md) / 2.0f;
-        hull_.resize(4);
-        hull_[0].x = ml;
-        hull_[0].y = rect.y - rect.height / 9;
-        hull_[1].x = ml;
-        hull_[1].y = rect.y - rect.height / 9 + rect.height / 2;
-        hull_[2].x = mr;
-        hull_[2].y = rect.y - rect.height / 9;
-        hull_[3].x = mr;
-        hull_[3].y = rect.y - rect.height / 9 + rect.height / 2;
-      } else {
-        for (auto& point : hull_) {
-          if (point.x < ml) {
-            point.x = ml;
-          } else if (point.x > mr) {
-            point.x = mr;
-          }
-        }
-      }
-    }
-
-    // Check if target is acquired.
-    for (const auto& cip : cursor_interpolation_) {
-      if (cip.x < 0 || cip.x > sw || cip.y < 0 || cip.y > sh) {
-        continue;
-      }
-      if (cv::pointPolygonTest(hull_, cip, false) > 0.0) {
-        target = cv::Point(0, 0);
-        if (!DRAW_OVERLAY) {
-          return target;
-        }
-        break;
-      }
-    }
-
-    // Store hull as contour for the draw call.
-    contours_[i] = std::move(hull_);
-  }
-  return target;
-  */
 }
 
 void eye::draw(uint8_t* image, int64_t pf, int64_t ps, int64_t cc) noexcept
@@ -460,37 +350,6 @@ void eye::draw(uint8_t* image, int64_t pf, int64_t ps, int64_t cc) noexcept
     }
   }
 }
-
-//std::optional<cv::Point> eye::find() noexcept
-//{
-//  auto cx = 0;
-//  auto cy = 0;
-//  for (const auto& contour : contours_) {
-//    const auto count = contour.size();
-//    if (!count) {
-//      continue;
-//    }
-//    auto ax = 0;
-//    auto ay = 0;
-//    for (const auto& point : contour) {
-//      ax += point.x;
-//      ay += point.y;
-//    }
-//    ax /= count;
-//    ay /= count;
-//
-//    constexpr auto cw = static_cast<int>(sw / 2);
-//    constexpr auto ch = static_cast<int>(sh / 2);
-//    if (std::abs(ax - cw) < std::abs(cx - cw)) {
-//      cx = ax;
-//      cy = ay - cv::boundingRect(contour).height / 4;
-//    }
-//  }
-//  if (cx) {
-//    return cv::Point(cx, cy);
-//  }
-//  return std::nullopt;
-//}
 
 void eye::desaturate(uint8_t* image) noexcept
 {

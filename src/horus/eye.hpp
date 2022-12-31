@@ -22,12 +22,6 @@ public:
   static constexpr uint32_t sx = (dw - sw) / 2;
   static constexpr uint32_t sy = (dh - sh) / 2;
 
-  // Ammo offset to display and size.
-  static constexpr uint32_t ax = (dw - gw) / 2 + 1784;
-  static constexpr uint32_t ay = (dh - gh) / 2 + 968;
-  static constexpr uint32_t aw = 28;
-  static constexpr uint32_t ah = 20;
-
   // Overlay color (magenta, minimum red, maximum green, minimum blue).
   // - 0xCA18C4 clean
   // - 0xE238EE scoped
@@ -73,7 +67,7 @@ public:
   ///
   /// @return Returns true if the cursor will target an enemy on the next frame.
   ///
-  bool scan(const uint8_t* image, int32_t mx, int32_t my) noexcept;
+  std::optional<cv::Point> scan(const uint8_t* image, int32_t mx, int32_t my) noexcept;
 
   /// Draws polygons, contours and filtered outlines from the last @ref scan call over the image.
   ///
@@ -94,15 +88,6 @@ public:
   /// @param ic 32-bit RGBA color for inner cross.
   ///
   void draw_reticle(uint8_t* image, uint32_t oc, uint32_t ic) noexcept;
-
-  /// Compares the aw:ah+0+0 part of the image to the previous call of this function.
-  ///
-  /// @param image Image used in the last @ref scan call.
-  ///
-  /// @return Returns the error value between 0.0f and 1.0f.
-  float ammo_changed(uint8_t* image) noexcept;
-
-  std::optional<cv::Point> find() noexcept;
 
   /// Desaturates the image.
   ///
@@ -130,7 +115,6 @@ private:
   std::vector<cv::Point> hull_;
 
   std::array<cv::Point2f, 7> cursor_interpolation_{};
-  std::array<std::array<uint8_t, aw * ah>, 2> ammo_masks_;
 };
 
 }  // namespace horus

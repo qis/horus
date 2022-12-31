@@ -57,32 +57,6 @@ constexpr unsigned rgba2gray(uint8_t* di) noexcept
   return 4;
 }
 
-void ammo2mask(uint8_t* si, uint8_t* di) noexcept
-{
-  int min = 0xFF;
-  int max = 0x00;
-  for (uint32_t y = 0; y < eye::ah; y++) {
-    for (uint32_t x = 0; x < eye::aw; x++) {
-      *di = static_cast<uint8_t>(si[0] * 0.299f + si[1] * 0.587f + si[2] * 0.114f);
-      if (*di < min) {
-        min = *di;
-      }
-      if (*di > max) {
-        max = *di;
-      }
-      di++;
-      si += 4;
-    }
-    si += (eye::sw - eye::aw) * 4;
-  }
-  di -= eye::aw * eye::ah;
-  const auto threshold = max > min ? static_cast<uint8_t>(min + (max - min) * 0.8f) : uint8_t(0xFF);
-  for (uint32_t i = 0; i < eye::aw * eye::ah; i++) {
-    *di = *di > threshold ? 0x01 : 0x00;
-    di++;
-  }
-}
-
 }  // namespace
 
 eye::eye()
@@ -92,64 +66,64 @@ eye::eye()
   polygons_.reserve(1024);
 }
 
-bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
+std::optional<cv::Point> eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
 {
   // Vertical iteration range.
-  const auto range = tbb::blocked_range<size_t>(ah + 1, sh - 1, 64);
+  const auto range = tbb::blocked_range<size_t>(1, sh - 1, 64);
 
   // Draw outlines.
   std::memset(outlines_.data(), 0, sw * sh);
   tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
     const auto rb = range.begin();
-    const auto re = range.end();
-    auto si = image + rb * sw * 4;         // src iterator
-    auto di = outlines_.data() + rb * sw;  // dst iterator
-    for (auto y = rb; y < re; y++) {
-      si += 4;
-      di += 1;
-      for (auto x = 1; x < sw - 1; x++) {
-        constexpr auto er = (oc >> 16 & 0xFF);  // minimum red
-        constexpr auto eg = (oc >> 8 & 0xFF);   // maximum green
-        constexpr auto eb = (oc & 0xFF);        // minimum blue
+  const auto re = range.end();
+  auto si = image + rb * sw * 4;         // src iterator
+  auto di = outlines_.data() + rb * sw;  // dst iterator
+  for (auto y = rb; y < re; y++) {
+    si += 4;
+    di += 1;
+    for (auto x = 1; x < sw - 1; x++) {
+      constexpr auto er = (oc >> 16 & 0xFF);  // minimum red
+      constexpr auto eg = (oc >> 8 & 0xFF);   // maximum green
+      constexpr auto eb = (oc & 0xFF);        // minimum blue
 
-        di[0] = si[0] > er && si[1] < eg && si[2] > eb ? 0x01 : 0x00;
+      di[0] = si[0] > er && si[1] < eg && si[2] > eb ? 0x01 : 0x00;
 
-        si += 4;
-        di += 1;
-      }
       si += 4;
       di += 1;
     }
-  });
+    si += 4;
+    di += 1;
+  }
+    });
 
   // Remove single outline pixels and those who have too many outline pixels as neighbours.
   tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
     const auto rb = range.begin();
-    const auto re = range.end();
-    auto si = outlines_.data() + rb * sw;  // src iterator
-    auto pi = si - sw;                     // pixel above the src iterator
-    auto ni = si + sw;                     // pixel below the src iterator
-    for (auto y = rb; y < re; y++) {
-      for (auto x = 1; x < sw - 0; x++) {
-        if (si[1]) {
-          const auto count = pi[0] + pi[1] + pi[2] + si[0] + si[1] + si[2] + ni[0] + ni[1] + ni[2];
-          if (count == 1 || count > 6) {
-            si[1] = 0x00;
-          }
+  const auto re = range.end();
+  auto si = outlines_.data() + rb * sw;  // src iterator
+  auto pi = si - sw;                     // pixel above the src iterator
+  auto ni = si + sw;                     // pixel below the src iterator
+  for (auto y = rb; y < re; y++) {
+    for (auto x = 1; x < sw - 0; x++) {
+      if (si[1]) {
+        const auto count = pi[0] + pi[1] + pi[2] + si[0] + si[1] + si[2] + ni[0] + ni[1] + ni[2];
+        if (count == 1 || count > 6) {
+          si[1] = 0x00;
         }
-        si += 1;
-        pi += 1;
-        ni += 1;
       }
-      si += 2;
-      pi += 2;
-      ni += 2;
+      si += 1;
+      pi += 1;
+      ni += 1;
     }
-  });
+    si += 2;
+    pi += 2;
+    ni += 2;
+  }
+    });
 
   // Ignore frames with too many outline pixels.
   if (std::reduce(std::begin(outlines_), std::end(outlines_), uint32_t(0)) > sw * sh / 64) {
-    return false;
+    return std::nullopt;
   }
 
   // Close small gaps in outlines.
@@ -168,7 +142,7 @@ bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
   // clang-format off
   polygons_.erase(std::remove_if(polygons_.begin(), polygons_.end(), [](const auto& points) {
     return cv::contourArea(points) < minimum_contour_area;
-  }), polygons_.end());
+    }), polygons_.end());
   // clang-format on
 
   // Draw polygons.
@@ -181,21 +155,21 @@ bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
   polygons_fill_count_.assign(polygons_.size(), 0);
   tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
     const auto rb = range.begin();
-    const auto re = range.end();
-    auto si = outlines_.data() + rb * sw;  // src iterator
-    for (auto y = rb; y < re; y++) {
-      for (auto x = 0; x < sw; x++) {
-        if (si[0]) {
-          for (size_t i = 0, size = polygons_.size(); i < size; i++) {
-            if (cv::pointPolygonTest(polygons_[i], cv::Point(x, y), false) > 0) {
-              polygons_fill_count_[i]++;
-            }
+  const auto re = range.end();
+  auto si = outlines_.data() + rb * sw;  // src iterator
+  for (auto y = rb; y < re; y++) {
+    for (auto x = 0; x < sw; x++) {
+      if (si[0]) {
+        for (size_t i = 0, size = polygons_.size(); i < size; i++) {
+          if (cv::pointPolygonTest(polygons_[i], cv::Point(x, y), false) > 0) {
+            polygons_fill_count_[i]++;
           }
         }
-        si += 1;
       }
+      si += 1;
     }
-  });
+  }
+    });
 
   // Remove polygons with too many overlay pixels.
   if (maximum_outline_ratio < 1.0) {
@@ -207,7 +181,7 @@ bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
     // clang-format off
     polygons_.erase(std::remove_if(polygons_.begin(), polygons_.end(), [](const auto& points) {
       return points.empty();
-    }), polygons_.end());
+      }), polygons_.end());
     // clang-format on
   }
 
@@ -264,7 +238,7 @@ bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
   cursor_interpolation_[6] = { x0 + dx * 0.46f, y0 + dy * 0.46f };
 
   // Check if the cursor is targeting an enemy.
-  bool target = false;
+  std::optional<cv::Point> target;
   for (size_t i = 0, max = contours_.size(); i < max; i++) {
     for (const auto& point : contours_[i]) {
     }
@@ -344,10 +318,10 @@ bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
         continue;
       }
       if (cv::pointPolygonTest(hull_, cip, false) > 0.0) {
+        target = cv::Point(0, 0);
         if (!DRAW_OVERLAY) {
-          return true;
+          return target;
         }
-        target = true;
         break;
       }
     }
@@ -457,51 +431,36 @@ void eye::draw_reticle(uint8_t* image, uint32_t oc, uint32_t ic) noexcept
   }
 }
 
-float eye::ammo_changed(uint8_t* image) noexcept
-{
-  ammo2mask(image, ammo_masks_[0].data());
-  auto mismatches = 0u;
-  auto si = ammo_masks_[0].data();
-  auto ci = ammo_masks_[1].data();
-  for (uint32_t i = 0; i < aw * ah; i++) {
-    if (*si++ != *ci++) {
-      mismatches++;
-    }
-  }
-  ammo_masks_[1] = ammo_masks_[0];
-  return static_cast<float>(mismatches) / (aw * ah);
-}
-
-std::optional<cv::Point> eye::find() noexcept
-{
-  auto cx = 0;
-  auto cy = 0;
-  for (const auto& contour : contours_) {
-    const auto count = contour.size();
-    if (!count) {
-      continue;
-    }
-    auto ax = 0;
-    auto ay = 0;
-    for (const auto& point : contour) {
-      ax += point.x;
-      ay += point.y;
-    }
-    ax /= count;
-    ay /= count;
-
-    constexpr auto cw = static_cast<int>(sw / 2);
-    constexpr auto ch = static_cast<int>(sh / 2);
-    if (std::abs(ax - cw) < std::abs(cx - cw)) {
-      cx = ax;
-      cy = ay - cv::boundingRect(contour).height / 4;
-    }
-  }
-  if (cx) {
-    return cv::Point(cx, cy);
-  }
-  return std::nullopt;
-}
+//std::optional<cv::Point> eye::find() noexcept
+//{
+//  auto cx = 0;
+//  auto cy = 0;
+//  for (const auto& contour : contours_) {
+//    const auto count = contour.size();
+//    if (!count) {
+//      continue;
+//    }
+//    auto ax = 0;
+//    auto ay = 0;
+//    for (const auto& point : contour) {
+//      ax += point.x;
+//      ay += point.y;
+//    }
+//    ax /= count;
+//    ay /= count;
+//
+//    constexpr auto cw = static_cast<int>(sw / 2);
+//    constexpr auto ch = static_cast<int>(sh / 2);
+//    if (std::abs(ax - cw) < std::abs(cx - cw)) {
+//      cx = ax;
+//      cy = ay - cv::boundingRect(contour).height / 4;
+//    }
+//  }
+//  if (cx) {
+//    return cv::Point(cx, cy);
+//  }
+//  return std::nullopt;
+//}
 
 void eye::desaturate(uint8_t* image) noexcept
 {

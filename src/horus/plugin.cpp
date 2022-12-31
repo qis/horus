@@ -190,17 +190,6 @@ public:
         100.0f);
       obs_source_video_render(target);
 
-      // Draw ammmo.
-      gs_ortho(
-        float(eye::ax),
-        float(eye::ax + eye::aw),
-        float(eye::ay),
-        float(eye::ay + eye::ah),
-        -100.0f,
-        100.0f);
-      gs_set_viewport(0, 0, eye::aw, eye::ah);
-      obs_source_video_render(target);
-
       gs_projection_pop();
       gs_texrender_end(texrender_);
 
@@ -237,14 +226,40 @@ public:
         // Measure scan duration.
         tp1 = clock::now();
 
-        // Toggle recoil compensation.
+        // Enable on left or right.
+        const auto left_state = left_state_;
+        left_state_ = mouse_.left;
+
+        const auto right_state = right_state_;
+        right_state_ = mouse_.right;
+        if ((!left_state && left_state_) || (!right_state && right_state_)) {
+          if (!hero_->enable()) {
+            sounds_[1].play();
+          }
+        }
+
+        // Disable on mouse down and enter.
+        const auto down_state = down_state_;
+        down_state_ = mouse_.down;
+
+        const auto enter_state = enter_state_;
+        enter_state_ = keybd_.enter;
+
+        if ((!down_state && down_state_) || (!enter_state && enter_state_)) {
+          if (!hero_->disable()) {
+            sounds_[0].play();
+          }
+        }
+
+        // Toggle menu.
         const auto menu_state = menu_state_;
         menu_state_ = keybd_.menu;
+
         if (!menu_state && menu_state_) {
           if (hero_->toggle()) {
-            sounds_[1].play();
-          } else {
             sounds_[0].play();
+          } else {
+            sounds_[1].play();
           }
         }
 
@@ -324,7 +339,6 @@ public:
           cv::Mat image(eye::sw, eye::sh, CV_8UC4, data.get(), eye::sw * 4);
           cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
           cv::imwrite(HORUS_RES "/screenshot.png", image);
-          //cv::imwrite(HORUS_RES "/ammo/scan.png", image(cv::Rect(0, 0, eye::aw, eye::ah)));
         }
         catch (const std::exception& e) {
           log("could not create screenshot: {}", e.what());
@@ -367,7 +381,14 @@ private:
   std::unique_ptr<hero::hitscan> hero_;
   clock::time_point hero_seen_;
 
+  bool left_state_{ false };
+  bool right_state_{ false };
+
+  bool down_state_{ false };
+  bool enter_state_{ false };
+
   bool menu_state_{ false };
+
   std::array<sound, 2> sounds_{};
 
   std::array<std::array<int32_t, 2>, 3> mouse_buffer_;

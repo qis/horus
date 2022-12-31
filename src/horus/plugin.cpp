@@ -226,36 +226,21 @@ public:
         // Measure scan duration.
         tp1 = clock::now();
 
-        // Enable on left or right.
-        const auto left_state = left_state_;
-        left_state_ = mouse_.left;
-
-        const auto right_state = right_state_;
-        right_state_ = mouse_.right;
-        if ((!left_state && left_state_) || (!right_state && right_state_)) {
-          if (!hero_->enable()) {
-            sounds_[1].play();
-          }
+        // Enable on left or right mouse buttons.
+        if (mouse_.left || mouse_.right) {
+          hero_->enable();
         }
 
-        // Disable on mouse down and enter.
+        // Disable on enter.
+        if (keybd_.enter) {
+          hero_->disable();
+        }
+
+        // Toggle on down mouse button.
         const auto down_state = down_state_;
         down_state_ = mouse_.down;
 
-        const auto enter_state = enter_state_;
-        enter_state_ = keybd_.enter;
-
-        if ((!down_state && down_state_) || (!enter_state && enter_state_)) {
-          if (!hero_->disable()) {
-            sounds_[0].play();
-          }
-        }
-
-        // Toggle menu.
-        const auto menu_state = menu_state_;
-        menu_state_ = keybd_.menu;
-
-        if (!menu_state && menu_state_) {
+        if (!down_state && down_state_) {
           if (hero_->toggle()) {
             sounds_[0].play();
           } else {
@@ -269,14 +254,9 @@ public:
           screenshot(data);
         }
 
-        // Draw overlay.
+        // Draw overlay and information.
         if (DRAW_OVERLAY) {
-          eye_.draw(data, 0x09BC2460, -1, 0x08DE29C0, -1);
-          eye_.draw_reticle(data, 0x000000FF, 0x00A5E7FF);
-        }
-
-        // Draw information.
-        if (DRAW_OVERLAY) {
+          eye_.draw(data, 0x09BC2460, 0x08DE29C0, 0x00A5E7FF);
           cv::Mat si(eye::sw, eye::sh, CV_8UC4, data, eye::sw * 4);
 
           stats_.clear();
@@ -381,14 +361,7 @@ private:
   std::unique_ptr<hero::hitscan> hero_;
   clock::time_point hero_seen_;
 
-  bool left_state_{ false };
-  bool right_state_{ false };
-
   bool down_state_{ false };
-  bool enter_state_{ false };
-
-  bool menu_state_{ false };
-
   std::array<sound, 2> sounds_{};
 
   std::array<std::array<int32_t, 2>, 3> mouse_buffer_;

@@ -40,16 +40,12 @@ public:
   // Connect polygons, which have points close to each other.
   static constexpr double polygon_connect_distance = 16.0;
 
-  // Selection pixel color.
-  static constexpr uint32_t sc = 0xFFFFED;
-
-  // Selection pixel scan position and the @ref hero call return value.
-  struct selection {
-    uint32_t c{ 0 };
-    uint32_t x{ 0 };
-    uint32_t y{ 0 };
-    std::pair<uint16_t, uint16_t> arrows;
-    std::string name;
+  // Scan result.
+  struct target {
+    cv::Point point{};
+    double distance{ 0.0 };
+    int cw{ 0 };
+    int ch{ 0 };
   };
 
   eye();
@@ -65,29 +61,20 @@ public:
   /// @param mx DirectInput mouse movement relative to the last frame (horizontal).
   /// @param my DirectInput mouse movement relative to the last frame (vertical).
   ///
-  /// @return Returns true if the cursor will target an enemy on the next frame.
+  /// @return Returns the closest target.
   ///
-  std::optional<cv::Point> scan(const uint8_t* image, int32_t mx, int32_t my) noexcept;
+  std::optional<target> scan(const uint8_t* image, int32_t mx, int32_t my) noexcept;
 
   /// Draws polygons, contours and filtered outlines from the last @ref scan call over the image.
   ///
   /// @param image Image used in the last @ref scan call.
   /// @param pf 32-bit RGBA color for polygons fill (negative to disable).
-  /// @param os 32-bit RGBA color for outlines strokes (negative to disable).
   /// @param ps 32-bit RGBA color for polygons strokes (negative to disable).
-  /// @param cs 32-bit RGBA color for contours strokes (negative to disable).
+  /// @param cc 32-bit RGBA color for centers points (negative to disable).
   /// @param mx DirectInput mouse movement relative to the last frame (horizontal).
   /// @param my DirectInput mouse movement relative to the last frame (vertical).
   ///
-  void draw(uint8_t* image, int64_t pf, int64_t os, int64_t ps, int64_t cs) noexcept;
-
-  /// Draws reticle over the image.
-  ///
-  /// @param image Input and output image (sw x sh 4 byte rgba).
-  /// @param oc 32-bit RGBA color for outer circle.
-  /// @param ic 32-bit RGBA color for inner cross.
-  ///
-  void draw_reticle(uint8_t* image, uint32_t oc, uint32_t ic) noexcept;
+  void draw(uint8_t* image, int64_t pf, int64_t ps, int64_t cc) noexcept;
 
   /// Desaturates the image.
   ///
@@ -96,7 +83,6 @@ public:
   static void desaturate(uint8_t* image) noexcept;
 
 private:
-  void draw_outlines(uint8_t* image, uint32_t oc) noexcept;
   void draw_overlays(uint8_t* image, uint32_t oc) noexcept;
 
   std::vector<uint8_t> outlines_{ std::vector<uint8_t>(sw * sh) };
@@ -112,9 +98,7 @@ private:
   std::vector<std::vector<cv::Point>> contours_;
   std::vector<std::vector<cv::Point>> polygons_;
   std::vector<size_t> polygons_fill_count_;
-  std::vector<cv::Point> hull_;
-
-  std::array<cv::Point2f, 7> cursor_interpolation_{};
+  std::vector<cv::Point> centers_;
 };
 
 }  // namespace horus

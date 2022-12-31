@@ -1,6 +1,7 @@
 /*
 .*
 !/res/
+/res/screenshot.png
 !/src/
 !/.clangd
 !/.clang-format

@@ -90,25 +90,6 @@ eye::eye()
   hierarchy_.reserve(1024);
   contours_.reserve(1024);
   polygons_.reserve(1024);
-
-  std::vector<uint8_t> ammo_data;
-  ammo_data.resize(sw * sh * 4);
-  std::fill(ammo_data.begin(), ammo_data.end(), 0x00);
-  cv::Mat ammo_scan(sw, sh, CV_8UC4, ammo_data.data(), sw * 4);
-
-  for (std::size_t i = 0; i < ammo_masks_.size(); i++) {
-    auto bgra =
-      cv::imread(std::format(HORUS_RES "/ammo/{:01d}.png", ammo_value[i]), cv::IMREAD_UNCHANGED);
-    assert(bgra.cols == static_cast<int>(aw));
-    assert(bgra.rows == static_cast<int>(ah));
-    assert(bgra.channels() == 4);
-
-    cv::Mat rgba(cv::Size(aw, ah), CV_8UC4);
-    cv::cvtColor(bgra, rgba, cv::COLOR_BGRA2RGBA);
-
-    rgba.copyTo(ammo_scan(cv::Rect(0, 0, aw, ah)));
-    ammo2mask(ammo_data.data(), ammo_masks_[i].data());
-  }
 }
 
 bool eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
@@ -476,59 +457,19 @@ void eye::draw_reticle(uint8_t* image, uint32_t oc, uint32_t ic) noexcept
   }
 }
 
-std::tuple<unsigned, float, unsigned, float> eye::ammo(uint8_t* image) noexcept
+float eye::ammo_changed(uint8_t* image) noexcept
 {
-  ammo2mask(image, ammo_mask_.data());
-
-  auto tens_count = 0u;
-  auto tens_error = 1.0f;
-
-  for (auto i : { a10, a21, a30 }) {
-    auto mismatches = 0u;
-    auto si = ammo_mask_.data();
-    auto ci = ammo_masks_[i].data();
-    for (uint32_t y = 0; y < ah; y++) {
-      for (uint32_t x = 0; x < aw / 2; x++) {
-        if (*si != *ci) {
-          mismatches++;
-        }
-        si++;
-        ci++;
-      }
-      si += aw - aw / 2;
-      ci += aw - aw / 2;
-    }
-    if (const auto e = static_cast<float>(mismatches) / (aw / 2 * ah); e < tens_error) {
-      tens_count = ammo_tens_value[i];
-      tens_error = e;
+  ammo2mask(image, ammo_masks_[0].data());
+  auto mismatches = 0u;
+  auto si = ammo_masks_[0].data();
+  auto ci = ammo_masks_[1].data();
+  for (uint32_t i = 0; i < aw * ah; i++) {
+    if (*si++ != *ci++) {
+      mismatches++;
     }
   }
-
-  auto ones_count = 0u;
-  auto ones_error = 1.0f;
-
-  for (auto i : { a21, a22, a23, a24, a25, a26, a27, a28, a29, a30 }) {
-    auto mismatches = 0u;
-    auto si = ammo_mask_.data();
-    auto ci = ammo_masks_[i].data();
-    for (uint32_t y = 0; y < ah; y++) {
-      si += aw / 2;
-      ci += aw / 2;
-      for (uint32_t x = aw / 2; x < aw; x++) {
-        if (*si != *ci) {
-          mismatches++;
-        }
-        si++;
-        ci++;
-      }
-    }
-    if (const auto e = static_cast<float>(mismatches) / ((aw - aw / 2) * ah); e < ones_error) {
-      ones_count = ammo_ones_value[i];
-      ones_error = e;
-    }
-  }
-
-  return { tens_count, tens_error, ones_count, ones_error };
+  ammo_masks_[1] = ammo_masks_[0];
+  return static_cast<float>(mismatches) / (aw * ah);
 }
 
 std::optional<cv::Point> eye::find() noexcept

@@ -95,14 +95,12 @@ public:
   ///
   void draw_reticle(uint8_t* image, uint32_t oc, uint32_t ic) noexcept;
 
-  /// Compares the aw:ah+0+0 part of the image to available ammo count images.
-  /// Error values below 0.1 usually mean that the count is correct.
+  /// Compares the aw:ah+0+0 part of the image to the previous call of this function.
   ///
   /// @param image Image used in the last @ref scan call.
   ///
-  /// @return Returns the detected tens and ones ammo count or 0
-  /// followed by the corresponding error value between 0.0f and 1.0f.
-  std::tuple<unsigned, float, unsigned, float> ammo(uint8_t* image) noexcept;
+  /// @return Returns the error value between 0.0f and 1.0f.
+  float ammo_changed(uint8_t* image) noexcept;
 
   std::optional<cv::Point> find() noexcept;
 
@@ -132,14 +130,7 @@ private:
   std::vector<cv::Point> hull_;
 
   std::array<cv::Point2f, 7> cursor_interpolation_{};
-
-  std::array<uint8_t, aw * ah> ammo_mask_;
-  std::array<std::array<uint8_t, aw * ah>, 11> ammo_masks_;
-
-  enum ammo_index : std::size_t { a10, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30 };
-  static constexpr std::array<size_t, 11> ammo_value{ 10, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30 };
-  static constexpr std::array<size_t, 11> ammo_tens_value{ 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3 };
-  static constexpr std::array<size_t, 11> ammo_ones_value{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0 };
+  std::array<std::array<uint8_t, aw * ah>, 2> ammo_masks_;
 };
 
 }  // namespace horus

@@ -123,6 +123,9 @@ public:
     }
 
     obs_leave_graphics();
+
+    sounds_[0] = { HORUS_RES "/0.wav" };
+    sounds_[1] = { HORUS_RES "/1.wav" };
   }
 
   plugin(plugin&& other) = delete;
@@ -225,14 +228,25 @@ public:
         // Adjust for sensitivity.
         // Shot too late means dx is too small - divide by smaller value.
         // Shot too soon means dx is too large - divide by larger value.
-        mouse_.dx /= 5;
-        mouse_.dy /= 5;
+        mouse_.dx /= 4;
+        mouse_.dy /= 4;
 
         // Scan using hero.
         hero_->scan(data, keybd_, mouse_, tp0);
 
         // Measure scan duration.
         tp1 = clock::now();
+
+        // Toggle recoil compensation.
+        const auto menu_state = menu_state_;
+        menu_state_ = keybd_.menu;
+        if (!menu_state && menu_state_) {
+          if (hero_->toggle()) {
+            sounds_[1].play();
+          } else {
+            sounds_[0].play();
+          }
+        }
 
         // Handle screenshot request.
         bool screenshot_expected = true;
@@ -353,9 +367,8 @@ private:
   std::unique_ptr<hero::hitscan> hero_;
   clock::time_point hero_seen_;
 
-  bool enter_state_{ false };
   bool menu_state_{ false };
-  bool chat_state_{ false };
+  std::array<sound, 2> sounds_{};
 
   std::array<std::array<int32_t, 2>, 3> mouse_buffer_;
   std::size_t mouse_buffer_index_{ 0 };

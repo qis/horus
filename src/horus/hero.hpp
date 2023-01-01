@@ -31,8 +31,8 @@ public:
     const auto menu_key = menu_key_;
     menu_key_ = keybd.menu;
 
-    // Disable on enter or windows key.
-    if (keybd.enter || keybd.win) {
+    // Disable on enter, escape or windows key.
+    if (keybd.enter || keybd.escape || keybd.win) {
       if (enabled_) {
         client_.mask(rock::button::up, std::chrono::milliseconds(0));
         glide_update_ = {};
@@ -41,8 +41,8 @@ public:
       enabled_ = false;
     }
 
-    // Enable right mouse button.
-    if (mouse.right) {
+    // Enable on menu.
+    if (keybd.menu) {
       enabled_ = true;
     }
 
@@ -50,26 +50,6 @@ public:
     if (!enabled_) {
       return;
     }
-
-    // Required Hero Options
-    // ===========================
-    // TOGGLE BEAM CONNECTION | OFF
-
-    // Toggle Mercy mode on menu down.
-    //if (!menu_key && menu_key_) {
-    //  mode_ = !mode_;
-    //  if (!mode_) {
-    //    client_.mode(rock::mode::none, 0ms);
-    //  } else {
-    //    mode_timeout_ = {};
-    //  }
-    //}
-
-    // Update Mercy mode.
-    //if (mode_ && frame > mode_timeout_) {
-    //  client_.mode(rock::mode::mercy, 2s);
-    //  mode_timeout_ = frame + 1s;
-    //}
 
     // Required Movement Options
     // ===========================
@@ -160,9 +140,6 @@ private:
   bool space_key_{ false };
   bool shift_key_{ false };
   bool menu_key_{ false };
-
-  //bool mode_{ false };
-  //clock::time_point mode_timeout_{};
 
   bool glide_{ false };
   bool glide_override_{ false };

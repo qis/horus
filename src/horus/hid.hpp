@@ -23,8 +23,9 @@ public:
     bool q;
     bool shift;
     bool space;
-    bool control;
     bool enter;
+    bool control;
+    bool escape;
     bool menu;
     bool win;
   };

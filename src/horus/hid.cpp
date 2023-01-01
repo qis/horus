@@ -116,8 +116,9 @@ bool hid::get(keybd& state) noexcept
     state.q = keybd_state_[DIK_Q] & 0x80 ? true : false;
     state.shift = keybd_state_[DIK_LSHIFT] & 0x80 ? true : false;
     state.space = keybd_state_[DIK_SPACE] & 0x80 ? true : false;
-    state.control = keybd_state_[DIK_LCONTROL] & 0x80 ? true : false;
     state.enter = keybd_state_[DIK_RETURN] & 0x80 ? true : false;
+    state.control = keybd_state_[DIK_LCONTROL] & 0x80 ? true : false;
+    state.escape = keybd_state_[DIK_ESCAPE] & 0x80 ? true : false;
     state.menu = keybd_state_[DIK_LMENU] & 0x80 ? true : false;
     state.win = keybd_state_[DIK_LWIN] & 0x80 ? true : false;
     return true;

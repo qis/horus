@@ -207,8 +207,8 @@ public:
           hero_->disable();
         }
 
-        // Enable left or right mouse button.
-        if (mouse_.left || mouse_.right) {
+        // Enable right mouse button.
+        if (mouse_.right) {
           hero_->enable();
         }
 

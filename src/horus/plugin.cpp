@@ -123,9 +123,6 @@ public:
     }
 
     obs_leave_graphics();
-
-    sounds_[0] = { HORUS_RES "/0.wav" };
-    sounds_[1] = { HORUS_RES "/1.wav" };
   }
 
   plugin(plugin&& other) = delete;
@@ -199,53 +196,20 @@ public:
         hid_.get(keybd_);
         hid_.get(mouse_);
 
-        // Get average mouse movement.
-        mouse_buffer_[mouse_buffer_index_][0] = mouse_.dx;
-        mouse_buffer_[mouse_buffer_index_][1] = mouse_.dy;
-        if (++mouse_buffer_index_ >= mouse_buffer_.size()) {
-          mouse_buffer_index_ = 0;
-        }
-        mouse_.dx = 0;
-        mouse_.dy = 0;
-        for (const auto& e : mouse_buffer_) {
-          mouse_.dx += e[0];
-          mouse_.dy += e[1];
-        }
-        mouse_.dx /= static_cast<int32_t>(mouse_buffer_.size());
-        mouse_.dy /= static_cast<int32_t>(mouse_buffer_.size());
-
-        // Adjust for sensitivity.
-        // Shot too late means dx is too small - divide by smaller value.
-        // Shot too soon means dx is too large - divide by larger value.
-        mouse_.dx /= 4;
-        mouse_.dy /= 4;
-
         // Scan using hero.
         hero_->scan(data, keybd_, mouse_, tp0);
 
         // Measure scan duration.
         tp1 = clock::now();
 
-        // Enable on left or right mouse buttons.
-        if (mouse_.left || mouse_.right) {
-          hero_->enable();
-        }
-
-        // Disable on enter.
-        if (keybd_.enter) {
+        // Disable on enter or windows key.
+        if (keybd_.enter || keybd_.win) {
           hero_->disable();
         }
 
-        // Toggle on down mouse button.
-        const auto down_state = down_state_;
-        down_state_ = mouse_.down;
-
-        if (!down_state && down_state_) {
-          if (hero_->toggle()) {
-            sounds_[0].play();
-          } else {
-            sounds_[1].play();
-          }
+        // Enable left or right mouse button.
+        if (mouse_.left || mouse_.right) {
+          hero_->enable();
         }
 
         // Handle screenshot request.
@@ -256,6 +220,7 @@ public:
 
         // Draw overlay and information.
         if (DRAW_OVERLAY) {
+          eye_.scan(data, mouse_.dx, mouse_.dy);
           eye_.draw(data, 0x09BC2460, 0x08DE29C0, 0x00A5E7FF);
           cv::Mat si(eye::sw, eye::sh, CV_8UC4, data, eye::sw * 4);
 
@@ -359,13 +324,6 @@ private:
   hid::mouse mouse_;
   rock::client client_;
   std::unique_ptr<hero::hitscan> hero_;
-  clock::time_point hero_seen_;
-
-  bool down_state_{ false };
-  std::array<sound, 2> sounds_{};
-
-  std::array<std::array<int32_t, 2>, 3> mouse_buffer_;
-  std::size_t mouse_buffer_index_{ 0 };
 
   std::string stats_;
   clock::time_point frame_time_point_{ clock::now() };

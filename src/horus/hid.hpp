@@ -19,8 +19,13 @@ public:
   };
 
   struct keybd {
+    bool q;
+    bool shift;
+    bool space;
+    bool control;
     bool enter;
     bool menu;
+    bool win;
   };
 
   hid() noexcept;

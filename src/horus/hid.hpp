@@ -19,6 +19,7 @@ public:
   };
 
   struct keybd {
+    bool s;
     bool q;
     bool shift;
     bool space;

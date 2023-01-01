@@ -207,8 +207,8 @@ public:
           hero_->disable();
         }
 
-        // Enable right mouse button.
-        if (mouse_.right) {
+        // Enable menu key or right mouse button.
+        if (keybd_.menu || mouse_.right) {
           hero_->enable();
         }
 

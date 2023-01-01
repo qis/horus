@@ -28,9 +28,6 @@ public:
     const auto shift_key = shift_key_;
     shift_key_ = keybd.shift;
 
-    const auto control_key = control_key_;
-    control_key_ = keybd.control;
-
     const auto menu_key = menu_key_;
     menu_key_ = keybd.menu;
 
@@ -41,9 +38,8 @@ public:
 
     // Required Bindings
     // ==============================
-    // CROUCH    | MOUSE 4 |
-    // JUMP      | MOUSE 5 |
-    // ABILITY 1 | LSHIFT  | LCONTROL
+    // CROUCH | MOUSE 4 | LCONTROL
+    // JUMP   | MOUSE 5 |
 
     // Enter Valkyrie mode on q down.
     if (!q_key && q_key_) {
@@ -62,8 +58,8 @@ public:
       glide_update_ = {};
     }
 
-    // Reset Glide override on shift down or control down.
-    if ((!shift_key && shift_key_) || (!control_key && control_key_)) {
+    // Reset Glide override on shift down.
+    if (!shift_key && shift_key_) {
       glide_override_ = false;
     }
 
@@ -77,45 +73,16 @@ public:
       return;
     }
 
-    // Start Glide on space while control is held.
-    if (control_key_ && (!space_key && space_key_)) {
+    // Start Glide on shift up or s down while shift is held if not overridden.
+    if (!glide_override_ && ((shift_key && !shift_key_) || (shift_key_ && !s_key && s_key_))) {
       client_.mask(rock::button::up, 0ms);
       glide_update_ = frame + 32ms;
-      glide_override_ = true;
       glide_ = true;
       return;
     }
 
-    // Start Glide or perform Super Jump when not overriden.
-    if (!glide_override_) {
-      // Start Glide on shift up or s down while shift is held.
-      if ((shift_key && !shift_key_) || (shift_key_ && !s_key && s_key_)) {
-        client_.mask(rock::button::up, 0ms);
-        glide_update_ = frame + 32ms;
-        glide_ = true;
-        return;
-      }
-
-      // Start Glide on s down while control is held.
-      if (control_key_ && !s_key && s_key_) {
-        client_.mask(rock::button::up, 0ms);
-        glide_update_ = frame + 32ms;
-        glide_ = true;
-        return;
-      }
-
-      // Perform Super Jump on control up.
-      if (control_key && !control_key_) {
-        client_.mask(rock::button::up, 0ms);
-        client_.mask(rock::button::down, 16ms);
-        glide_update_ = frame + 32ms;
-        glide_ = !valkyrie_;
-        return;
-      }
-    }
-
     // Start Glide on space down.
-    if (!shift_key_ && !control_key_ && !space_key && space_key_) {
+    if (!shift_key_ && !space_key && space_key_) {
       client_.mask(rock::button::up, 0ms);
       glide_update_ = frame + 32ms;
       glide_ = true;
@@ -123,9 +90,13 @@ public:
     }
 
     // Stop Glide on space up.
-    if (!shift_key_ && !control_key_ && space_key && !space_key_) {
-      client_.mask(rock::button::up, 0ms);
-      glide_ = false;
+    if (!shift_key_ && space_key && !space_key_) {
+      if (glide_override_) {
+        glide_override_ = false;
+      } else {
+        client_.mask(rock::button::up, 0ms);
+        glide_ = false;
+      }
       return;
     }
 
@@ -163,7 +134,6 @@ private:
   bool q_key_{ false };
   bool space_key_{ false };
   bool shift_key_{ false };
-  bool control_key_{ false };
   bool menu_key_{ false };
 
   bool glide_{ false };

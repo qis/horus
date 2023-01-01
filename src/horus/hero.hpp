@@ -36,6 +36,9 @@ public:
       return;
     }
 
+    // Required Bindings
+    // JUMP: MOUSE 5
+
     // Stop flying on down button press and schedule jump.
     if ((!down_state && down_state_)) {
       client_.mask(rock::button::up, 0ms);

@@ -89,6 +89,11 @@ public:
       return;
     }
 
+    // Reset Glide override if space is released before the shift key.
+    if (shift_key_ && space_key && !space_key_) {
+      glide_override_ = false;
+    }
+
     // Stop Glide on space up.
     if (!shift_key_ && space_key && !space_key_) {
       if (glide_override_) {

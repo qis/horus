@@ -202,16 +202,6 @@ public:
         // Measure scan duration.
         tp1 = clock::now();
 
-        // Disable on enter or windows key.
-        if (keybd_.enter || keybd_.win) {
-          hero_->disable();
-        }
-
-        // Enable menu key or right mouse button.
-        if (keybd_.menu || mouse_.right) {
-          hero_->enable();
-        }
-
         // Handle screenshot request.
         bool screenshot_expected = true;
         if (screenshot_request.compare_exchange_weak(screenshot_expected, false)) {

@@ -31,13 +31,48 @@ public:
     const auto menu_key = menu_key_;
     menu_key_ = keybd.menu;
 
+    // Disable on enter or windows key.
+    if (keybd.enter || keybd.win) {
+      if (enabled_) {
+        client_.mask(rock::button::up, std::chrono::milliseconds(0));
+        glide_update_ = {};
+        glide_ = false;
+      }
+      enabled_ = false;
+    }
+
+    // Enable right mouse button.
+    if (mouse.right) {
+      enabled_ = true;
+    }
+
     // Skip when not enabled.
     if (!enabled_) {
       return;
     }
 
-    // Required Bindings
-    // ==============================
+    // Required Hero Options
+    // ===========================
+    // TOGGLE BEAM CONNECTION | OFF
+
+    // Toggle Mercy mode on menu down.
+    //if (!menu_key && menu_key_) {
+    //  mode_ = !mode_;
+    //  if (!mode_) {
+    //    client_.mode(rock::mode::none, 0ms);
+    //  } else {
+    //    mode_timeout_ = {};
+    //  }
+    //}
+
+    // Update Mercy mode.
+    //if (mode_ && frame > mode_timeout_) {
+    //  client_.mode(rock::mode::mercy, 2s);
+    //  mode_timeout_ = frame + 1s;
+    //}
+
+    // Required Movement Options
+    // ===========================
     // CROUCH | MOUSE 4 | LCONTROL
     // JUMP   | MOUSE 5 |
 
@@ -115,21 +150,6 @@ public:
     }
   }
 
-  void enable() noexcept
-  {
-    enabled_ = true;
-  }
-
-  void disable() noexcept
-  {
-    if (enabled_) {
-      client_.mask(rock::button::up, std::chrono::milliseconds(0));
-      glide_update_ = {};
-      glide_ = false;
-    }
-    enabled_ = false;
-  }
-
 private:
   eye& eye_;
   rock::client& client_;
@@ -140,6 +160,9 @@ private:
   bool space_key_{ false };
   bool shift_key_{ false };
   bool menu_key_{ false };
+
+  //bool mode_{ false };
+  //clock::time_point mode_timeout_{};
 
   bool glide_{ false };
   bool glide_override_{ false };

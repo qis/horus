@@ -5,11 +5,11 @@
 
 namespace horus::hero {
 
-class hitscan {
+class mercy {
 public:
   using clock = std::chrono::high_resolution_clock;
 
-  hitscan(eye& eye, rock::client& client) noexcept : eye_(eye), client_(client) {}
+  mercy(eye& eye, rock::client& client) noexcept : eye_(eye), client_(client) {}
 
   void scan(std::uint8_t* data, const hid::keybd& keybd, const hid::mouse& mouse, clock::time_point frame) noexcept
   {
@@ -31,8 +31,8 @@ public:
     const auto menu_key = menu_key_;
     menu_key_ = keybd.menu;
 
-    // Disable on enter, escape or windows key.
-    if (keybd.enter || keybd.escape || keybd.win) {
+    // Disable on b, enter, escape, windows key and menu + tab.
+    if (keybd.b || keybd.enter || keybd.escape || keybd.win || (keybd.menu && keybd.tab)) {
       if (enabled_) {
         client_.mask(rock::button::up, std::chrono::milliseconds(0));
         glide_update_ = {};

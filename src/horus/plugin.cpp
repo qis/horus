@@ -92,7 +92,7 @@ public:
   static inline std::shared_ptr<boost::asio::thread_pool> screenshot_thread_pool;
 
   plugin(obs_source_t* context) noexcept :
-    source_(context), hero_(std::make_unique<hero::hitscan>(eye_, client_))
+    source_(context), hero_(std::make_unique<hero::mercy>(eye_, client_))
   {
     name_ = reinterpret_cast<std::uintptr_t>(this);
 
@@ -313,7 +313,7 @@ private:
   hid::keybd keybd_;
   hid::mouse mouse_;
   rock::client client_;
-  std::unique_ptr<hero::hitscan> hero_;
+  std::unique_ptr<hero::mercy> hero_;
 
   std::string stats_;
   clock::time_point frame_time_point_{ clock::now() };

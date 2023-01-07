@@ -63,14 +63,14 @@ public:
   ///
   /// @return Returns number of targets.
   ///
-  std::size_t scan(const uint8_t* image) noexcept;
+  size_t scan(const uint8_t* image) noexcept;
 
-  /// Draws timings from the last @ref scan call over the image.
+  /// Draws statistics from the last @ref scan call over the image.
   ///
   /// @param image Image used in the last @ref scan call.
   /// @param color RGBA color.
   ///
-  void draw_timings(uint8_t* image, uint32_t color) noexcept;
+  void draw_stats(uint8_t* image, uint32_t color) noexcept;
 
   void draw_color(uint8_t* image, uint32_t color) noexcept
   {
@@ -140,13 +140,13 @@ public:
   void draw_targets(uint8_t* image, uint32_t color) noexcept
   {
     std::memset(targets_overlay_.data(), 0, sw * sh);
-    //cv::polylines(targets_overlay_image_, targets_, true, cv::Scalar(255), 1, cv::LINE_AA);
-    for (size_t i = 0, size = targets_.size(); i < size; i++) {
-      cv::fillPoly(targets_overlay_image_, targets_[i], cv::Scalar(255), cv::LINE_AA);
-      //draw(image, 0xFF0000FF, targets_[i][0]);
-      //draw(image, 0x0000FFFF, targets_[i][targets_[i].size() - 1]);
-    }
+    cv::fillPoly(targets_overlay_image_, targets_, cv::Scalar(255), cv::LINE_AA);
     draw(image, color, targets_overlay_);
+    for (const auto& target : targets_) {
+      for (size_t i = 0, size = target.size(); i < size; i++) {
+        draw(image, 0xFFFFFF88, target[i]);
+      }
+    }
   }
 
 #if 0
@@ -210,6 +210,7 @@ private:
   std::vector<uint8_t> targets_overlay_{ std::vector<uint8_t>(sw * sh) };
   cv::Mat targets_overlay_image_{ sw, sh, CV_8UC1, targets_overlay_.data(), sw };
 
+  std::vector<cv::Point> connections_;
   std::vector<cv::Vec4i> hierarchy_;
 };
 

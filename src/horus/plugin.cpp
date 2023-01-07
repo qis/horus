@@ -171,7 +171,7 @@ public:
           //eye_.draw_groups(image, 0x08DE2990);
           eye_.draw_targets(image, 0x08DE2990);
 
-          eye_.draw_timings(image, 0x09BC2460);
+          eye_.draw_stats(image, 0x09BC2460);
 
           stats_.clear();
           std::format_to(

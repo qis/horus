@@ -75,10 +75,10 @@ bool intersecting(const eye::polygon& a, const eye::polygon& b) noexcept
   if (asize < 2 || bsize < 2) {
     return false;
   }
-  for (std::size_t ai = 1; ai < asize; ai++) {
+  for (size_t ai = 1; ai < asize; ai++) {
     const auto& a0 = a[ai - 1];
     const auto& a1 = a[ai];
-    for (std::size_t bi = 1; bi < bsize; bi++) {
+    for (size_t bi = 1; bi < bsize; bi++) {
       const auto& b0 = b[bi - 1];
       const auto& b1 = b[bi];
       if (intersecting(a0, a1, b0, b1)) {
@@ -93,10 +93,10 @@ bool intersecting(const eye::polygon& a, const eye::polygon& b) noexcept
 
 eye::eye() {}
 
-std::size_t eye::scan(const uint8_t* image) noexcept
+size_t eye::scan(const uint8_t* image) noexcept
 {
   // Block interval.
-  constexpr std::size_t interval = 64;
+  constexpr size_t interval = 64;
 
   // Enemy outlines color.
   constexpr auto er = static_cast<uint8_t>(oc >> 16 & 0xFF);  // minimum red
@@ -143,11 +143,11 @@ std::size_t eye::scan(const uint8_t* image) noexcept
 
   // Create regions by closing small gaps in outlines and unsetting outline pixels in regular intervals.
   cv::morphologyEx(outlines_image_, regions_image_, cv::MORPH_CLOSE, regions_close_kernel_);
-  for (std::size_t y = interval / 2; y < sh; y += interval) {
+  for (size_t y = interval / 2; y < sh; y += interval) {
     std::fill_n(regions_.data() + y * sw, sw, 0x00);
   }
-  for (std::size_t y = 0; y < sh; y++) {
-    for (std::size_t x = interval / 2; x < sw; x += interval) {
+  for (size_t y = 0; y < sh; y++) {
+    for (size_t x = interval / 2; x < sw; x += interval) {
       regions_[y * sw + x] = 0x00;
     }
   }
@@ -230,8 +230,8 @@ std::size_t eye::scan(const uint8_t* image) noexcept
   groups_.clear();
   groups_.resize(shapes_.size());
   for (const auto& polygon : polygons_) {
-    for (std::size_t i = 0, isize = shapes_.size(); i < isize; i++) {
-      for (std::size_t j = 0, jsize = polygon.size(); j < jsize; j++) {
+    for (size_t i = 0, isize = shapes_.size(); i < isize; i++) {
+      for (size_t j = 0, jsize = polygon.size(); j < jsize; j++) {
         if (cv::pointPolygonTest(shapes_[i], polygon[j], true) > -0.5) {
           groups_[i].push_back(polygon);
           i = isize;
@@ -250,11 +250,197 @@ std::size_t eye::scan(const uint8_t* image) noexcept
 
   timings_.emplace_back(clock::now(), "groups");
 
+  // Create targets.
+  std::vector<size_t> connected;
+
+  // clang-format off
+  const auto find_closest_polygon = [&connected](
+    const std::vector<polygon>& segments,
+    const cv::Point& point,
+    size_t skip
+  ) noexcept -> std::tuple<size_t, size_t, double> {
+    size_t segment_index = 0;
+    size_t segment_point_index = 0;
+    auto search_distance = std::numeric_limits<double>::max();
+    for (size_t i = 1, isize = segments.size(); i < isize; i++) {
+      if (i == skip) {
+        continue;
+      }
+      if (const auto end = connected.end(); std::find(connected.begin(), end, i) != end) {
+        continue;
+      }
+      for (size_t j = 0, jsize = segments[i].size(); j < jsize; j++) {
+        const auto distance = cv::norm(segments[i][j] - point);
+        if (distance < search_distance) {
+          search_distance = distance;
+          segment_point_index = j;
+          segment_index = i;
+        }
+      }
+    }
+    return { segment_index, segment_point_index, search_distance };
+  };
+  // clang-format on
+
+  connections_.clear();
+
+  struct segment {
+    size_t index{ 0 };
+    size_t first{ 0 };
+    size_t last{ 0 };
+  };
+
+
+  targets_.clear();
+  targets_.resize(groups_.size());
+  for (size_t i = 0, isize = groups_.size(); i < isize; i++) {
+    const auto& segments = groups_[i];
+    const auto segments_size = segments.size();
+    auto& target = targets_[i];
+
+    // If there is only one segment, add it as a target.
+    if (segments_size < 2) {
+      if (segments_size == 1) {
+        target = segments[0];
+      }
+      continue;
+    }
+
+    // Reset list of connected segments.
+    connected.clear();
+
+    // First segment.
+    segment sf;
+
+    // Last segment.
+    segment sl;
+
+    // Find first point of the first segment and last point of the last segment.
+    auto search_distance = std::numeric_limits<double>::max();
+    for (size_t pi = 0, psize = segments[0].size(); pi < psize; pi++) {
+      const auto [segment_index, segment_point_index, distance] =
+        find_closest_polygon(segments, segments[0][pi], 0);
+      if (distance < search_distance) {
+        sf.first = pi;
+        sl.index = segment_index;
+        sl.last = segment_point_index;
+        search_distance = distance;
+      }
+    }
+
+    // Prevent find_closest_polygon from searching the last segment. 
+    connected.push_back(sl.index);
+
+    // Current segment.
+    auto sc = sf;
+
+    while (connected.size() < segments_size) {
+      // Find next segment.
+      segment sn;
+      search_distance = std::numeric_limits<double>::max();
+      for (size_t pi = 0, psize = segments[sc.index].size(); pi + 1 < psize; pi++) {
+        if (pi == sc.first) {
+          continue;
+        }
+        const auto [segment_index, segment_point_index, distance] =
+          find_closest_polygon(segments, segments[sc.index][pi], sc.index);
+        if (distance < search_distance) {
+          sc.last = pi;
+          sn.index = segment_index;
+          sn.first = segment_point_index;
+          search_distance = distance;
+        }
+      }
+      
+      // Connect current segment.
+      // TODO: Choose the path based on length or distance.
+      const auto segment_size = segments[sc.index].size();
+      assert(segment_size);
+      for (size_t pi = sc.first; pi != sc.last;) {
+        target.push_back(segments[sc.index][pi]);
+        if (sc.first < sc.last) {
+          pi++;
+          if (pi >= segment_size) {
+            pi = 0;
+          }
+        } else {
+          if (pi == 0) {
+            pi = segment_size;
+          }
+          pi--;
+        }
+      }
+      target.push_back(segments[sc.index][sc.last]);
+      connected.push_back(sc.index);
+
+      // Stop if there is no next segment.
+      if (!sn.index) {
+        break;
+      }
+
+      // Switch to the next segment.
+      sc = sn;
+    }
+
+    assert(!target.empty());
+
+    // Find first point of the last segment.
+    search_distance = std::numeric_limits<double>::max();
+    for (size_t pi = 0, psize = segments[sl.index].size(); pi + 1 < psize; pi++) {
+      if (pi == sl.last) {
+        continue;
+      }
+      const auto distance = cv::norm(segments[sl.index][pi] - target[target.size() - 1]);
+      if (distance < search_distance) {
+        search_distance = distance;
+        sl.first = pi;
+      }
+    }
+
+    // Connect last segment.
+    const auto segment_size = segments[sl.index].size();
+    assert(segment_size);
+    for (size_t pi = sl.first; pi != sl.last;) {
+      target.push_back(segments[sl.index][pi]);
+      if (sl.first < sl.last) {
+        pi++;
+        if (pi >= segment_size) {
+          pi = 0;
+        }
+      } else {
+        if (pi == 0) {
+          pi = segment_size;
+        }
+        pi--;
+      }
+    }
+    target.push_back(segments[sl.index][sl.last]);
+    //target.push_back(segments[0][sf.first]);
+    
+
+    if (const auto target_size = target.size(); target_size) {
+      connections_.push_back(target[0]);
+      if (target_size > 1) {
+        connections_.push_back(target[target.size() - 1]);
+      }
+    }
+  }
+
+  // Remove targets with less, than three vertices.
+  // clang-format off
+  //targets_.erase(std::remove_if(targets_.begin(), targets_.end(), [](const auto& polygon) {
+  //  return polygon.size() < 3;
+  //}), targets_.end());
+  // clang-format on
+
+  timings_.emplace_back(clock::now(), "targets");
+
+#if 0
   // Creaate targets by connecting groups.
   targets_.clear();
   targets_.resize(groups_.size());
-  std::vector<std::size_t> connected;
-  for (std::size_t i = 0, size = groups_.size(); i < size; i++) {
+  std::vector<size_t> connected;
+  for (size_t i = 0, size = groups_.size(); i < size; i++) {
     const auto& group = groups_[i];
     auto& target = targets_[i];
 
@@ -273,23 +459,23 @@ std::size_t eye::scan(const uint8_t* image) noexcept
     const auto polygon_first_size = polygon_first.size();
 
     // Last point of the first polygon.
-    std::size_t polygon_first_end = 0;
+    size_t polygon_first_end = 0;
 
     // Index of the next polygon.
-    std::size_t polygon_next = 0;
+    size_t polygon_next = 0;
 
     // Index of the first point in the next polygon.
-    std::size_t polygon_next_begin = 0;
+    size_t polygon_next_begin = 0;
 
     // Used for the search of the closest adjacent polygon.
     auto search_distance = std::numeric_limits<double>::max();
 
     // Find polygon that is closest to one of the points of the first polygon.
-    for (std::size_t pi = 0, psize = group[0].size(); pi < psize; pi++) {
+    for (size_t pi = 0, psize = group[0].size(); pi < psize; pi++) {
       // Iterate over the other polygons in this group.
-      for (std::size_t gi = 1; gi < group_size; gi++) {
+      for (size_t gi = 1; gi < group_size; gi++) {
         // Iterate over the points of the other polygon.
-        for (std::size_t ai = 0, asize = group[gi].size(); ai < asize; ai++) {
+        for (size_t ai = 0, asize = group[gi].size(); ai < asize; ai++) {
           const auto distance = cv::norm(group[gi][ai] - group[0][pi]);
           if (distance < search_distance) {
             search_distance = distance;
@@ -316,14 +502,14 @@ std::size_t eye::scan(const uint8_t* image) noexcept
       // Find last point of the current polygon.
       auto polygon_end = polygon_begin;
       search_distance = std::numeric_limits<double>::max();
-      for (std::size_t pi = 0; pi < polygon_size; pi++) {
+      for (size_t pi = 0; pi < polygon_size; pi++) {
         // Skip first point of the current polygon.
         if (pi == polygon_begin) {
           continue;
         }
 
         // Iterate over the other polygons in this group.
-        for (std::size_t gi = 1; gi < group_size; gi++) {
+        for (size_t gi = 1; gi < group_size; gi++) {
           // Skip current polygon.
           if (gi == polygon_index) {
             continue;
@@ -335,7 +521,7 @@ std::size_t eye::scan(const uint8_t* image) noexcept
           }
 
           // Iterate over the points of the other polygon.
-          for (std::size_t ai = 0, asize = group[gi].size(); ai < asize; ai++) {
+          for (size_t ai = 0, asize = group[gi].size(); ai < asize; ai++) {
             const auto distance = cv::norm(group[gi][ai] - polygon[pi]);
             if (distance < search_distance) {
               search_distance = distance;
@@ -376,9 +562,9 @@ std::size_t eye::scan(const uint8_t* image) noexcept
     const auto polygon_last_size = polygon_last.size();
 
     // Find first point of the last polygon.
-    std::size_t polygon_last_begin = 0;
+    size_t polygon_last_begin = 0;
     search_distance = std::numeric_limits<double>::max();
-    for (std::size_t ai = 0, asize = polygon_last.size(); ai < asize; ai++) {
+    for (size_t ai = 0, asize = polygon_last.size(); ai < asize; ai++) {
       const auto distance = cv::norm(polygon_last[ai] - target[target.size() - 1]);
       if (distance < search_distance) {
         search_distance = distance;
@@ -390,8 +576,8 @@ std::size_t eye::scan(const uint8_t* image) noexcept
     auto polygon_first_begin = polygon_first_end;
     auto polygon_last_end = polygon_last_begin;
     search_distance = std::numeric_limits<double>::max();
-    for (std::size_t fi = 0; fi < polygon_first_size; fi++) {
-      for (std::size_t li = 0; li < polygon_last_size; li++) {
+    for (size_t fi = 0; fi < polygon_first_size; fi++) {
+      for (size_t li = 0; li < polygon_last_size; li++) {
         const auto distance = cv::norm(polygon_last[li] - polygon_first[fi]);
         if (distance < search_distance) {
           search_distance = distance;
@@ -448,37 +634,49 @@ std::size_t eye::scan(const uint8_t* image) noexcept
   // clang-format on
 
   timings_.emplace_back(clock::now(), "targets");
+#endif
 
   return 0;
 }
 
-void eye::draw_timings(uint8_t* image, uint32_t color) noexcept
+void eye::draw_stats(uint8_t* image, uint32_t color) noexcept
 {
   using duration = std::chrono::duration<float, std::milli>;
+
+  std::string text;
+  auto tpos = cv::Point(10, eye::uh + 25);
+  cv::Mat si(eye::sw, eye::sh, CV_8UC4, image, eye::sw * 4);
+
+  size_t targets = targets_.size();
+  size_t targets_points = 0;
+  for (const auto& target : targets_) {
+    targets_points += target.size();
+  }
+  text = std::format("{}/{} targets", targets, targets_points);
+  cv::putText(si, text, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
+  cv::putText(si, text, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
+  tpos.y += 25;
 
   if (timings_.size() < 2) {
     return;
   }
 
-  std::string timing;
-  auto tpos = cv::Point(10, eye::uh + 25);
-  cv::Mat si(eye::sw, eye::sh, CV_8UC4, image, eye::sw * 4);
-  for (std::size_t i = 1, size = timings_.size(); i < size; i++) {
+  for (size_t i = 1, size = timings_.size(); i < size; i++) {
     const auto& t0 = timings_[i - 1];
     const auto& t1 = timings_[i];
     const auto ms = std::chrono::duration_cast<duration>(t1.tp - t0.tp).count();
-    timing = std::format("{:5.3f} {}", ms, t1.name ? t1.name : "");
-    cv::putText(si, timing, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
-    cv::putText(si, timing, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
+    text = std::format("{:5.3f} {}", ms, t1.name ? t1.name : "");
+    cv::putText(si, text, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
+    cv::putText(si, text, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
     tpos.y += 25;
   }
 
   const auto& t0 = timings_[0];
   const auto& t1 = timings_[timings_.size() - 1];
   const auto ms = std::chrono::duration_cast<duration>(t1.tp - t0.tp).count();
-  timing = std::format("{:5.3f} total", ms);
-  cv::putText(si, timing, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
-  cv::putText(si, timing, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
+  text = std::format("{:5.3f} total", ms);
+  cv::putText(si, text, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
+  cv::putText(si, text, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
 }
 
 void eye::desaturate(uint8_t* image) noexcept

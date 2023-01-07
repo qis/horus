@@ -152,6 +152,10 @@ public:
       return;
     }
 
+    // TODO: Add new stage:
+    // - GA forward on W release and press while shift is held (like S).
+    // - Cancel GA if W, S or SPACE were not pressed.
+
     // Required Movement Options
     // ===========================
     // CROUCH | MOUSE 4 | LCONTROL

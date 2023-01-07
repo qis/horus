@@ -22,6 +22,7 @@ class plugin {
 public:
   using clock = std::chrono::high_resolution_clock;
 
+  static inline std::atomic_size_t screenshot_index{ 0 };
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::shared_ptr<boost::asio::thread_pool> screenshot_thread_pool;
 
@@ -170,6 +171,7 @@ public:
           //eye_.draw_shapes(image, 0x08DE2990);
           //eye_.draw_groups(image, 0x08DE2990);
           eye_.draw_targets(image, 0x08DE2990);
+          eye_.draw_contours(image, 0x08DE29C0);
           eye_.draw_points(image, 0xFFFFFF88);
 
           eye_.draw_stats(image, 0x09BC2460);
@@ -238,9 +240,11 @@ public:
     if (auto sp = screenshot_thread_pool) {
       boost::asio::post(*sp, [this, data = std::move(data)]() noexcept {
         try {
+          const auto index = screenshot_index.fetch_add(1);
+          const auto filename = std::format(HORUS_RES "/screenshot{:04d}.png", index);
           cv::Mat image(eye::sw, eye::sh, CV_8UC4, data.get(), eye::sw * 4);
           cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
-          cv::imwrite(HORUS_RES "/screenshot.png", image);
+          cv::imwrite(filename, image);
         }
         catch (const std::exception& e) {
           log("could not create screenshot: {}", e.what());

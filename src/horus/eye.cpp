@@ -254,7 +254,7 @@ size_t eye::scan(const uint8_t* image) noexcept
   std::vector<size_t> connected;
 
   // clang-format off
-  const auto find_closest_polygon = [&connected](
+  const auto find_closest_segment = [&connected](
     const std::vector<polygon>& segments,
     const cv::Point& point,
     size_t skip
@@ -317,7 +317,7 @@ size_t eye::scan(const uint8_t* image) noexcept
     auto search_distance = std::numeric_limits<double>::max();
     for (size_t pi = 0, psize = segments[0].size(); pi < psize; pi++) {
       const auto [segment_index, segment_point_index, distance] =
-        find_closest_polygon(segments, segments[0][pi], 0);
+        find_closest_segment(segments, segments[0][pi], 0);
       if (distance < search_distance) {
         sf.first = pi;
         sl.index = segment_index;
@@ -326,22 +326,40 @@ size_t eye::scan(const uint8_t* image) noexcept
       }
     }
 
+    // Set last point of the first segment in case there are only two segments.
+    if (sf.first == 0) {
+      assert(!segments[0].empty());
+      sf.last = segments[0].size() - 1;
+    } else {
+      sf.last = sf.first - 1;
+    }
+
     // Prevent find_closest_polygon from searching the last segment. 
     connected.push_back(sl.index);
 
     // Current segment.
     auto sc = sf;
 
-    while (connected.size() < segments_size) {
+    while (connected.size() + 1 < segments_size) {
       // Find next segment.
       segment sn;
       search_distance = std::numeric_limits<double>::max();
       for (size_t pi = 0, psize = segments[sc.index].size(); pi + 1 < psize; pi++) {
+        // Skip first point.
         if (pi == sc.first) {
           continue;
         }
+
+        // Find closest segment.
         const auto [segment_index, segment_point_index, distance] =
-          find_closest_polygon(segments, segments[sc.index][pi], sc.index);
+          find_closest_segment(segments, segments[sc.index][pi], sc.index);
+
+        // Stop if there is no next segment.
+        if (!segment_index) {
+          break;
+        }
+
+        // Update last point and next segment.
         if (distance < search_distance) {
           sc.last = pi;
           sn.index = segment_index;
@@ -351,7 +369,6 @@ size_t eye::scan(const uint8_t* image) noexcept
       }
       
       // Connect current segment.
-      // TODO: Choose the path based on length or distance.
       const auto segment_size = segments[sc.index].size();
       assert(segment_size);
       for (size_t pi = sc.first; pi != sc.last;) {
@@ -378,8 +395,9 @@ size_t eye::scan(const uint8_t* image) noexcept
 
       // Switch to the next segment.
       sc = sn;
-    }
+    };
 
+    // Connect first segment if there are only two segments.
     assert(!target.empty());
 
     // Find first point of the last segment.

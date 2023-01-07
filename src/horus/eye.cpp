@@ -48,17 +48,530 @@ private:
   const float m_;
 };
 
-constexpr unsigned rgba2gray(uint8_t* di) noexcept
+bool neighboring(const eye::polygon& a, const eye::polygon& b, double distance) noexcept
 {
-  const auto c = static_cast<uint8_t>(di[0] * 0.299f + di[1] * 0.587f + di[2] * 0.114f);
-  di[0] = c;
-  di[1] = c;
-  di[2] = c;
-  return 4;
+  for (const auto& ap : a) {
+    for (const auto& bp : b) {
+      if (cv::norm(ap - bp) < distance) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool intersecting(const cv::Point& a, const cv::Point& b, const cv::Point& c, const cv::Point& d) noexcept
+{
+  constexpr auto ccw = [](const cv::Point& a, const cv::Point& b, const cv::Point& c) noexcept {
+    return (c.y - a.y) * (b.x - a.x) > (b.y - a.y) * (c.x - a.x);
+  };
+  return ccw(a, c, d) != ccw(b, c, d) && ccw(a, b, c) != ccw(a, b, d);
+}
+
+bool intersecting(const eye::polygon& a, const eye::polygon& b) noexcept
+{
+  const auto asize = a.size();
+  const auto bsize = b.size();
+  if (asize < 2 || bsize < 2) {
+    return false;
+  }
+  for (std::size_t ai = 1; ai < asize; ai++) {
+    const auto& a0 = a[ai - 1];
+    const auto& a1 = a[ai];
+    for (std::size_t bi = 1; bi < bsize; bi++) {
+      const auto& b0 = b[bi - 1];
+      const auto& b1 = b[bi];
+      if (intersecting(a0, a1, b0, b1)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 }  // namespace
 
+eye::eye() {}
+
+std::size_t eye::scan(const uint8_t* image) noexcept
+{
+  // Block interval.
+  constexpr std::size_t interval = 64;
+
+  // Enemy outlines color.
+  constexpr auto er = static_cast<uint8_t>(oc >> 16 & 0xFF);  // minimum red
+  constexpr auto eg = static_cast<uint8_t>(oc >> 8 & 0xFF);   // maximum green
+  constexpr auto eb = static_cast<uint8_t>(oc & 0xFF);        // minimum blue
+
+  // Vertical scan iteration range without the user interface.
+  const auto range = tbb::blocked_range<size_t>(uh + 1, sh - 1, interval);
+
+  // Reset timings.
+  timings_.clear();
+  timings_.emplace_back(clock::now(), nullptr);
+
+  // Copy pixels that fall into the outlines color range.
+  std::memset(color_.data(), 0, sw * sh);
+  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
+    const auto rb = range.begin();
+    const auto re = range.end();
+    auto si = image + rb * sw * 4;      // src iterator
+    auto di = color_.data() + rb * sw;  // dst iterator
+    for (auto y = rb; y < re; y++) {
+      si += 4;
+      di += 1;
+      for (auto x = 1; x < sw - 1; x++) {
+        di[0] = si[0] > er && si[1] < eg && si[2] > eb ? 0xFF : 0x00;
+        si += 4;
+        di += 1;
+      }
+      si += 4;
+      di += 1;
+    }
+  });
+  timings_.emplace_back(clock::now(), "color");
+
+  // Create mask that filters large outline color regions.
+  cv::erode(color_image_, color_mask_image_, color_mask_erode_kernel_);
+  cv::dilate(color_mask_image_, color_mask_image_, color_mask_dilate_kernel_);
+  timings_.emplace_back(clock::now(), "color mask");
+
+  // Apply mask to get outlines.
+  cv::bitwise_not(color_mask_image_, outlines_mask_image_);
+  cv::bitwise_and(color_image_, outlines_mask_image_, outlines_image_);
+  timings_.emplace_back(clock::now(), "outlines");
+
+  // Create regions by closing small gaps in outlines and unsetting outline pixels in regular intervals.
+  cv::morphologyEx(outlines_image_, regions_image_, cv::MORPH_CLOSE, regions_close_kernel_);
+  for (std::size_t y = interval / 2; y < sh; y += interval) {
+    std::fill_n(regions_.data() + y * sw, sw, 0x00);
+  }
+  for (std::size_t y = 0; y < sh; y++) {
+    for (std::size_t x = interval / 2; x < sw; x += interval) {
+      regions_[y * sw + x] = 0x00;
+    }
+  }
+  timings_.emplace_back(clock::now(), "regions");
+
+  // Find countours.
+  cv::findContours(regions_image_, contours_, hierarchy_, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+  timings_.emplace_back(clock::now(), "contours");
+
+  // Create polygons.
+  polygons_.resize(contours_.size());
+  for (size_t i = 0, size = contours_.size(); i < size; i++) {
+    cv::approxPolyDP(contours_[i], polygons_[i], 3.0, false);
+  }
+  timings_.emplace_back(clock::now(), "polygons");
+
+  // Join neighboring polygons into hulls.
+  hulls_.clear();
+  for (const auto& polygon : polygons_) {
+    auto connected = false;
+    for (auto& hull : hulls_) {
+      if (neighboring(polygon, hull, polygon_connect_distance)) {
+        hull.insert(hull.end(), polygon.begin(), polygon.end());
+        connected = true;
+        break;
+      }
+    }
+    if (!connected) {
+      hulls_.push_back(polygon);
+    }
+  }
+
+  // Make sure the hulls are correct.
+  for (size_t i = 0, size = hulls_.size(); i < size; i++) {
+    const auto hull = std::move(hulls_[i]);
+    cv::convexHull(cv::Mat(hull), hulls_[i]);
+  }
+
+  // Remove hulls with less, than three vertices.
+  // clang-format off
+  hulls_.erase(std::remove_if(hulls_.begin(), hulls_.end(), [](const auto& polygon) {
+    return polygon.size() < 3;
+  }), hulls_.end());
+  // clang-format on
+
+  timings_.emplace_back(clock::now(), "hulls");
+
+  // Join neighboring and intersecting hulls into shapes.
+  shapes_.clear();
+  for (const auto& hull : hulls_) {
+    auto connected = false;
+    for (auto& shape : shapes_) {
+      if (neighboring(hull, shape, polygon_connect_distance) || intersecting(hull, shape)) {
+        shape.insert(shape.end(), hull.begin(), hull.end());
+        connected = true;
+        break;
+      }
+    }
+    if (!connected) {
+      shapes_.push_back(hull);
+    }
+  }
+
+  // Make sure the shapes are correct.
+  for (size_t i = 0, size = shapes_.size(); i < size; i++) {
+    const auto shape = std::move(shapes_[i]);
+    cv::convexHull(cv::Mat(shape), shapes_[i]);
+  }
+
+  // Remove shapes with less, than three vertices.
+  // clang-format off
+  shapes_.erase(std::remove_if(shapes_.begin(), shapes_.end(), [](const auto& polygon) {
+    return polygon.size() < 3;
+  }), shapes_.end());
+  // clang-format on
+
+  timings_.emplace_back(clock::now(), "shapes");
+
+  // Group polygons based on which shape they belong to.
+  groups_.clear();
+  groups_.resize(shapes_.size());
+  for (const auto& polygon : polygons_) {
+    for (std::size_t i = 0, isize = shapes_.size(); i < isize; i++) {
+      for (std::size_t j = 0, jsize = polygon.size(); j < jsize; j++) {
+        if (cv::pointPolygonTest(shapes_[i], polygon[j], true) > -0.5) {
+          groups_[i].push_back(polygon);
+          i = isize;
+          break;
+        }
+      }
+    }
+  }
+
+  // Remove empty groups.
+  // clang-format off
+  groups_.erase(std::remove_if(groups_.begin(), groups_.end(), [](const auto& group) {
+    return group.empty();
+  }), groups_.end());
+  // clang-format on
+
+  timings_.emplace_back(clock::now(), "groups");
+
+  // Creaate targets by connecting groups.
+  targets_.clear();
+  targets_.resize(groups_.size());
+  std::vector<std::size_t> connected;
+  for (std::size_t i = 0, size = groups_.size(); i < size; i++) {
+    const auto& group = groups_[i];
+    auto& target = targets_[i];
+
+    const auto group_size = group.size();
+
+    // If there is only one polygon in a group, add it as a target.
+    if (group_size < 2) {
+      if (group_size == 1) {
+        target = group[0];
+      }
+      continue;
+    }
+
+    // First polygon.
+    const auto& polygon_first = group[0];
+    const auto polygon_first_size = polygon_first.size();
+
+    // Last point of the first polygon.
+    std::size_t polygon_first_end = 0;
+
+    // Index of the next polygon.
+    std::size_t polygon_next = 0;
+
+    // Index of the first point in the next polygon.
+    std::size_t polygon_next_begin = 0;
+
+    // Used for the search of the closest adjacent polygon.
+    auto search_distance = std::numeric_limits<double>::max();
+
+    // Find polygon that is closest to one of the points of the first polygon.
+    for (std::size_t pi = 0, psize = group[0].size(); pi < psize; pi++) {
+      // Iterate over the other polygons in this group.
+      for (std::size_t gi = 1; gi < group_size; gi++) {
+        // Iterate over the points of the other polygon.
+        for (std::size_t ai = 0, asize = group[gi].size(); ai < asize; ai++) {
+          const auto distance = cv::norm(group[gi][ai] - group[0][pi]);
+          if (distance < search_distance) {
+            search_distance = distance;
+            polygon_first_end = pi;
+            polygon_next_begin = ai;
+            polygon_next = gi;
+          }
+        }
+      }
+    }
+
+    // Connect all polygons except first and last.
+    connected.clear();
+    connected.reserve(group_size);
+    while (connected.size() < group_size - 2) {
+      // Current polygon.
+      const auto polygon_index = polygon_next;
+      const auto& polygon = group[polygon_index];
+      const auto polygon_size = polygon.size();
+
+      // First point of the current polygon.
+      const auto polygon_begin = polygon_next_begin;
+
+      // Find last point of the current polygon.
+      auto polygon_end = polygon_begin;
+      search_distance = std::numeric_limits<double>::max();
+      for (std::size_t pi = 0; pi < polygon_size; pi++) {
+        // Skip first point of the current polygon.
+        if (pi == polygon_begin) {
+          continue;
+        }
+
+        // Iterate over the other polygons in this group.
+        for (std::size_t gi = 1; gi < group_size; gi++) {
+          // Skip current polygon.
+          if (gi == polygon_index) {
+            continue;
+          }
+
+          // Skip polygons that are already connected.
+          if (std::find(connected.begin(), connected.end(), gi) != connected.end()) {
+            continue;
+          }
+
+          // Iterate over the points of the other polygon.
+          for (std::size_t ai = 0, asize = group[gi].size(); ai < asize; ai++) {
+            const auto distance = cv::norm(group[gi][ai] - polygon[pi]);
+            if (distance < search_distance) {
+              search_distance = distance;
+              polygon_end = pi;
+              polygon_next_begin = ai;
+              polygon_next = gi;
+            }
+          }
+        }
+      }
+
+      // Connect current polygon.
+      for (auto pi = polygon_begin; pi != polygon_end;) {
+        target.push_back(polygon[pi]);
+        if (polygon_begin < polygon_end) {
+          if (pi == polygon_size - 1) {
+            pi = 0;
+          } else {
+            pi++;
+          }
+        } else {
+          if (pi == 0) {
+            pi = polygon_size - 1;
+          } else {
+            pi--;
+          }
+        }
+      }
+      target.push_back(polygon[polygon_end]);
+      connected.push_back(polygon_index);
+    }
+
+    // Target.
+    assert(!targets_.empty());
+
+    // Last polygon.
+    const auto& polygon_last = group[group.size() - 1];
+    const auto polygon_last_size = polygon_last.size();
+
+    // Find first point of the last polygon.
+    std::size_t polygon_last_begin = 0;
+    search_distance = std::numeric_limits<double>::max();
+    for (std::size_t ai = 0, asize = polygon_last.size(); ai < asize; ai++) {
+      const auto distance = cv::norm(polygon_last[ai] - target[target.size() - 1]);
+      if (distance < search_distance) {
+        search_distance = distance;
+        polygon_last_begin = ai;
+      }
+    }
+
+    // Find first point of the first polygon and last point of the last polygon.
+    auto polygon_first_begin = polygon_first_end;
+    auto polygon_last_end = polygon_last_begin;
+    search_distance = std::numeric_limits<double>::max();
+    for (std::size_t fi = 0; fi < polygon_first_size; fi++) {
+      for (std::size_t li = 0; li < polygon_last_size; li++) {
+        const auto distance = cv::norm(polygon_last[li] - polygon_first[fi]);
+        if (distance < search_distance) {
+          search_distance = distance;
+          polygon_first_begin = fi;
+          polygon_last_end = li;
+        }
+      }
+    }
+
+    // Connect last polygon.
+    for (auto pi = polygon_last_begin; pi != polygon_last_end;) {
+      target.push_back(polygon_last[pi]);
+      if (polygon_last_begin < polygon_last_end) {
+        if (pi == polygon_last_size - 1) {
+          pi = 0;
+        } else {
+          pi++;
+        }
+      } else {
+        if (pi == 0) {
+          pi = polygon_last_size - 1;
+        } else {
+          pi--;
+        }
+      }
+    }
+    target.push_back(polygon_last[polygon_last_end]);
+
+    // Connect first polygon.
+    for (auto pi = polygon_first_begin; pi != polygon_first_end;) {
+      target.push_back(polygon_first[pi]);
+      if (polygon_first_begin < polygon_first_end) {
+        if (pi == polygon_first_size - 1) {
+          pi = 0;
+        } else {
+          pi++;
+        }
+      } else {
+        if (pi == 0) {
+          pi = polygon_first_size - 1;
+        } else {
+          pi--;
+        }
+      }
+    }
+    target.push_back(polygon_first[polygon_first_end]);
+  }
+
+  // Remove targets with less, than three vertices.
+  // clang-format off
+  targets_.erase(std::remove_if(targets_.begin(), targets_.end(), [](const auto& polygon) {
+    return polygon.size() < 3;
+  }), targets_.end());
+  // clang-format on
+
+  timings_.emplace_back(clock::now(), "targets");
+
+  return 0;
+}
+
+void eye::draw_timings(uint8_t* image, uint32_t color) noexcept
+{
+  using duration = std::chrono::duration<float, std::milli>;
+
+  if (timings_.size() < 2) {
+    return;
+  }
+
+  std::string timing;
+  auto tpos = cv::Point(10, eye::uh + 25);
+  cv::Mat si(eye::sw, eye::sh, CV_8UC4, image, eye::sw * 4);
+  for (std::size_t i = 1, size = timings_.size(); i < size; i++) {
+    const auto& t0 = timings_[i - 1];
+    const auto& t1 = timings_[i];
+    const auto ms = std::chrono::duration_cast<duration>(t1.tp - t0.tp).count();
+    timing = std::format("{:5.3f} {}", ms, t1.name ? t1.name : "");
+    cv::putText(si, timing, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
+    cv::putText(si, timing, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
+    tpos.y += 25;
+  }
+
+  const auto& t0 = timings_[0];
+  const auto& t1 = timings_[timings_.size() - 1];
+  const auto ms = std::chrono::duration_cast<duration>(t1.tp - t0.tp).count();
+  timing = std::format("{:5.3f} total", ms);
+  cv::putText(si, timing, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
+  cv::putText(si, timing, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
+}
+
+void eye::desaturate(uint8_t* image) noexcept
+{
+  const auto range = tbb::blocked_range<size_t>(0, sh, 64);
+  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
+    const auto rb = range.begin();
+    const auto re = range.end();
+    auto di = image + rb * sw * 4;  // dst iterator
+    for (auto y = rb; y < re; y++) {
+      for (auto x = 0; x < sw; x++) {
+        const auto c = static_cast<uint8_t>(di[0] * 0.299f + di[1] * 0.587f + di[2] * 0.114f);
+        di[0] = c;
+        di[1] = c;
+        di[2] = c;
+        di += 4;
+      }
+    }
+  });
+}
+
+void eye::draw(uint8_t* image, uint32_t color, const std::vector<uint8_t>& overlay) noexcept
+{
+  const auto oc = overlay_color(color);
+  const auto range = tbb::blocked_range<size_t>(0, sh, 64);
+  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
+    const size_t rb = range.begin();
+    const size_t re = range.end();
+    auto si = overlay.data() + rb * sw;  // src iterator
+    auto di = image + rb * sw * 4;       // dst iterator
+    for (auto y = rb; y < re; y++) {
+      for (auto x = 0; x < sw; x++) {
+        if (*si > 0) {
+          oc.apply(di);
+        }
+        si += 1;
+        di += 4;
+      }
+    }
+  });
+}
+
+void eye::draw(uint8_t* image, uint32_t color, const cv::Point& point) noexcept
+{
+  constexpr auto set = [](uint8_t* di, const overlay_color& color, unsigned count) noexcept {
+    for (unsigned i = 0; i < count; i++) {
+      color.apply(di);
+      di += 4;
+    }
+    return count * 4;
+  };
+
+  constexpr const overlay_color ooc(0x000000FF);
+  const overlay_color oic(color);
+
+  const auto x = static_cast<long>(point.x);
+  const auto y = static_cast<long>(point.y);
+
+  auto di = image + (y - 2) * sw * 4 + (x - 2) * 4;  // dst iterator
+
+  // Line 1.
+  di += set(di, ooc, 4);
+  di += sw * 4 - 5 * 4;
+
+  // Line 2.
+  di += set(di, ooc, 2);
+  di += set(di, oic, 2);
+  di += set(di, ooc, 2);
+  di += sw * 4 - 6 * 4;
+
+  // Line 3.
+  di += set(di, ooc, 1);
+  di += set(di, oic, 4);
+  di += set(di, ooc, 1);
+  di += sw * 4 - 6 * 4;
+
+  // Line 4.
+  di += set(di, ooc, 1);
+  di += set(di, oic, 4);
+  di += set(di, ooc, 1);
+  di += sw * 4 - 6 * 4;
+
+  // Line 5.
+  di += set(di, ooc, 2);
+  di += set(di, oic, 2);
+  di += set(di, ooc, 2);
+  di += sw * 4 - 5 * 4;
+
+  // Line 6.
+  set(di, ooc, 4);
+}
+
+#if 0
 eye::eye()
 {
   hierarchy_.reserve(1024);
@@ -82,9 +595,9 @@ std::optional<eye::target> eye::scan(const uint8_t* image, int32_t mx, int32_t m
       si += 4;
       di += 1;
       for (auto x = 1; x < sw - 1; x++) {
-        constexpr auto er = (oc >> 16 & 0xFF);  // minimum red
-        constexpr auto eg = (oc >> 8 & 0xFF);   // maximum green
-        constexpr auto eb = (oc & 0xFF);        // minimum blue
+        constexpr auto er = (ec >> 16 & 0xFF);  // minimum red
+        constexpr auto eg = (ec >> 8 & 0xFF);   // maximum green
+        constexpr auto eb = (ec & 0xFF);        // minimum blue
 
         di[0] = si[0] > er && si[1] < eg && si[2] > eb ? 0x01 : 0x00;
 
@@ -223,8 +736,8 @@ std::optional<eye::target> eye::scan(const uint8_t* image, int32_t mx, int32_t m
   cv::findContours(overlays_image_, contours_, hierarchy_, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
   // Find contour centers and determine closest target.
-  const cv::Point mouse(sw / 2 + mx, sh / 2 + my);
   std::optional<target> result;
+  const cv::Point mouse(mx, my);
   centers_.resize(contours_.size());
   for (size_t i = 0, m = contours_.size(); i < m; i++) {
     const auto size = contours_[i].size();
@@ -233,6 +746,7 @@ std::optional<eye::target> eye::scan(const uint8_t* image, int32_t mx, int32_t m
     }
 
     auto ax = 0;
+    auto ay = 0;
     auto al = static_cast<int>(sw);
     auto at = static_cast<int>(sh);
     auto ar = 0;
@@ -244,6 +758,7 @@ std::optional<eye::target> eye::scan(const uint8_t* image, int32_t mx, int32_t m
       } else if (point.x > ar) {
         ar = point.x;
       }
+      ay += point.y;
       if (point.y < at) {
         at = point.y;
       } else if (point.y > ab) {
@@ -258,7 +773,7 @@ std::optional<eye::target> eye::scan(const uint8_t* image, int32_t mx, int32_t m
     }
     const auto aw = ar - al;
     const auto ah = ab - at;
-    centers_[i] = cv::Point(ax / size, at + ah / 16);
+    centers_[i] = cv::Point(ax / size, ay / size);
     if (const auto d = cv::norm(mouse - centers_[i]); !result || d < result->distance) {
       result.emplace(centers_[i], d, aw, ah);
     }
@@ -367,10 +882,10 @@ void eye::desaturate(uint8_t* image) noexcept
   });
 }
 
-void eye::draw_overlays(uint8_t* image, uint32_t oc) noexcept
+void eye::draw_overlays(uint8_t* image, uint32_t ec) noexcept
 {
   const auto range = tbb::blocked_range<size_t>(0, sh, 64);
-  const auto color = overlay_color(static_cast<uint32_t>(oc));
+  const auto color = overlay_color(static_cast<uint32_t>(ec));
   tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
     const size_t rb = range.begin();
     const size_t re = range.end();
@@ -387,5 +902,7 @@ void eye::draw_overlays(uint8_t* image, uint32_t oc) noexcept
     }
   });
 }
+
+#endif
 
 }  // namespace horus

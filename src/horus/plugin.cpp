@@ -15,74 +15,8 @@
 #include <vector>
 
 #include <Windows.h>
-#include <SDL.h>
 
 namespace horus {
-
-class sound {
-public:
-  sound() noexcept = default;
-
-  sound(const char* filename) noexcept
-  {
-    SDL_LoadWAV(filename, &spec_, &buffer_, &length_);
-    if (buffer_) {
-      device_ = SDL_OpenAudioDevice(nullptr, 0, &spec_, nullptr, 0);
-    }
-  }
-
-  sound(sound&& other) noexcept :
-    length_(std::exchange(other.length_, 0)),
-    buffer_(std::exchange(other.buffer_, nullptr)),
-    spec_(std::exchange(other.spec_, {})),
-    device_(std::exchange(other.device_, 0))
-  {}
-
-  sound(const sound& other) noexcept = delete;
-
-  sound& operator=(sound&& other) noexcept
-  {
-    close();
-    length_ = std::exchange(other.length_, 0);
-    buffer_ = std::exchange(other.buffer_, nullptr);
-    spec_ = std::exchange(other.spec_, {});
-    device_ = std::exchange(other.device_, 0);
-    return *this;
-  }
-
-  sound& operator=(const sound& other) noexcept = delete;
-
-  ~sound()
-  {
-    close();
-  }
-
-  void close() noexcept
-  {
-    if (buffer_) {
-      if (device_) {
-        SDL_CloseAudioDevice(device_);
-        device_ = 0;
-      }
-      SDL_FreeWAV(buffer_);
-      buffer_ = nullptr;
-    }
-  }
-
-  void play() noexcept
-  {
-    if (device_) {
-      SDL_QueueAudio(device_, buffer_, length_);
-      SDL_PauseAudioDevice(device_, 0);
-    }
-  }
-
-private:
-  Uint32 length_{ 0 };
-  Uint8* buffer_{ nullptr };
-  SDL_AudioSpec spec_{};
-  SDL_AudioDeviceID device_{ 0 };
-};
 
 class plugin {
 public:
@@ -91,8 +25,7 @@ public:
   static inline std::atomic_bool screenshot_request{ false };
   static inline std::shared_ptr<boost::asio::thread_pool> screenshot_thread_pool;
 
-  plugin(obs_source_t* context) noexcept :
-    source_(context), hero_(std::make_unique<hero::mercy>(eye_, client_))
+  plugin(obs_source_t* context) noexcept : source_(context)
   {
     name_ = reinterpret_cast<std::uintptr_t>(this);
 
@@ -173,11 +106,11 @@ public:
     gs_texrender_reset(texrender_);
     if (gs_texrender_begin(texrender_, eye::sw, eye::sh)) {
       uint32_t line = 0;
-      uint8_t* data = nullptr;
+      uint8_t* image = nullptr;
 
       gs_projection_push();
 
-      // Draw source.
+      // Draw scan.
       gs_ortho(
         float(eye::sx),
         float(eye::sx + eye::sw),
@@ -187,48 +120,81 @@ public:
         100.0f);
       obs_source_video_render(target);
 
+      // Draw user interface.
+      gs_ortho(
+        float(eye::gx + eye::ux),
+        float(eye::gx + eye::ux + eye::uw),
+        float(eye::gy + eye::uy),
+        float(eye::gy + eye::uy + eye::uh),
+        -100.0f,
+        100.0f);
+      gs_set_viewport(0, 0, eye::uw, eye::uh);
+      obs_source_video_render(target);
+
       gs_projection_pop();
       gs_texrender_end(texrender_);
 
       gs_stage_texture(stagesurf_, gs_texrender_get_texture(texrender_));
-      if (gs_stagesurface_map(stagesurf_, &data, &line)) {
+      if (gs_stagesurface_map(stagesurf_, &image, &line)) {
         // Get keyboard and mouse state.
         hid_.get(keybd_);
         hid_.get(mouse_);
 
         // Scan using hero.
-        hero_->scan(data, keybd_, mouse_, tp0);
+        if (hero_) {
+          hero_->scan(image, keybd_, mouse_, tp0);
+        }
 
         // Measure scan duration.
         tp1 = clock::now();
 
-        // Handle screenshot request.
-        bool screenshot_expected = true;
-        if (screenshot_request.compare_exchange_weak(screenshot_expected, false)) {
-          screenshot(data);
+        // Load and announce hero.
+        const auto hero_key = hero_key_;
+        hero_key_ = keybd_.f12;
+        if (!hero_key && hero_key_) {
+          hero_ = hero::next(hero_, eye_, client_);
         }
 
         // Draw overlay and information.
         if (DRAW_OVERLAY) {
-          eye_.scan(data, mouse_.dx, mouse_.dy);
-          eye_.draw(data, 0x09BC2460, 0x08DE29C0, 0x00A5E7FF);
-          cv::Mat si(eye::sw, eye::sh, CV_8UC4, data, eye::sw * 4);
+          eye_.scan(image);
+          eye::desaturate(image);
+
+          //eye_.draw_color(image, 0x08DE29C0);
+          //eye_.draw_color_mask(image, 0x08DE29C0);
+          //eye_.draw_outlines(image, 0x08DE29FF);
+          //eye_.draw_regions(image, 0x08DE29C0);
+          //eye_.draw_contours(image, 0x08DE29C0);
+          //eye_.draw_polygons(image, 0x08DE2990);
+          //eye_.draw_hulls(image, 0x08DE2990);
+          //eye_.draw_shapes(image, 0x08DE2990);
+          //eye_.draw_groups(image, 0x08DE2990);
+          eye_.draw_targets(image, 0x08DE2990);
+
+          eye_.draw_timings(image, 0x09BC2460);
 
           stats_.clear();
           std::format_to(
             std::back_inserter(stats_),
-            "{:03d} fps | {:05.1f} ms",
+            "{:03d} fps | {:03.1f} ms",
             static_cast<int>(frames_per_second_),
             average_duration_);
 
           const auto tpos = cv::Point(10, eye::sh - 10);
+          cv::Mat si(eye::sw, eye::sh, CV_8UC4, image, eye::sw * 4);
           cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 0, 0, 255 }, 4, cv::LINE_AA);
           cv::putText(si, stats_, tpos, cv::FONT_HERSHEY_PLAIN, 1.5, { 0, 165, 231, 255 }, 2, cv::LINE_AA);
 
           // Release image.
-          gs_texture_set_image(scan_, data, eye::sw * 4, false);
+          gs_texture_set_image(scan_, image, eye::sw * 4, false);
           gs_stagesurface_unmap(stagesurf_);
           overlay = true;
+        }
+
+        // Handle screenshot request.
+        bool screenshot_expected = true;
+        if (screenshot_request.compare_exchange_weak(screenshot_expected, false)) {
+          screenshot(image);
         }
       }
     }
@@ -313,7 +279,8 @@ private:
   hid::keybd keybd_;
   hid::mouse mouse_;
   rock::client client_;
-  std::unique_ptr<hero::mercy> hero_;
+  std::unique_ptr<hero::base> hero_;
+  bool hero_key_{ false };
 
   std::string stats_;
   clock::time_point frame_time_point_{ clock::now() };
@@ -384,7 +351,7 @@ static HHOOK hook = nullptr;
 
 static LRESULT CALLBACK HookProc(int code, WPARAM wparam, LPARAM lparam)
 {
-  if (wparam == WM_KEYDOWN && reinterpret_cast<LPKBDLLHOOKSTRUCT>(lparam)->vkCode == VK_F12) {
+  if (wparam == WM_KEYDOWN && reinterpret_cast<LPKBDLLHOOKSTRUCT>(lparam)->vkCode == VK_F11) {
     horus::plugin::screenshot_request.store(true, std::memory_order_release);
   }
   return CallNextHookEx(hook, code, wparam, lparam);

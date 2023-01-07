@@ -1,6 +1,6 @@
 #pragma once
 
-#define DRAW_OVERLAY 0
+#define DRAW_OVERLAY 1
 
 #define HORUS_LOG "C:/OBS/horus.log"
 #define HORUS_RES "C:/OBS/horus/res"

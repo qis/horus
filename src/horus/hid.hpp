@@ -20,6 +20,8 @@ public:
 
   struct keybd {
     bool b;
+    bool c;
+    bool r;
     bool s;
     bool q;
     bool shift;
@@ -30,6 +32,7 @@ public:
     bool menu;
     bool tab;
     bool win;
+    bool f12;
   };
 
   hid() noexcept;

@@ -113,6 +113,8 @@ bool hid::get(keybd& state) noexcept
   const auto hr = keybd_->GetDeviceState(sizeof(keybd_state_), keybd_state_);
   if (SUCCEEDED(hr)) {
     state.b = keybd_state_[DIK_B] & 0x80 ? true : false;
+    state.c = keybd_state_[DIK_C] & 0x80 ? true : false;
+    state.r = keybd_state_[DIK_R] & 0x80 ? true : false;
     state.s = keybd_state_[DIK_S] & 0x80 ? true : false;
     state.q = keybd_state_[DIK_Q] & 0x80 ? true : false;
     state.shift = keybd_state_[DIK_LSHIFT] & 0x80 ? true : false;
@@ -123,6 +125,7 @@ bool hid::get(keybd& state) noexcept
     state.menu = keybd_state_[DIK_LMENU] & 0x80 ? true : false;
     state.tab = keybd_state_[DIK_TAB] & 0x80 ? true : false;
     state.win = keybd_state_[DIK_LWIN] & 0x80 ? true : false;
+    state.f12 = keybd_state_[DIK_F12] & 0x80 ? true : false;
     return true;
   }
   keybd_->Acquire();

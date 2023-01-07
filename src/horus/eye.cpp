@@ -344,7 +344,7 @@ size_t eye::scan(const uint8_t* image) noexcept
       // Find next segment.
       segment sn;
       search_distance = std::numeric_limits<double>::max();
-      for (size_t pi = 0, psize = segments[sc.index].size(); pi + 1 < psize; pi++) {
+      for (size_t pi = 0, psize = segments[sc.index].size(); pi < psize; pi++) {
         // Skip first point.
         if (pi == sc.first) {
           continue;
@@ -402,7 +402,7 @@ size_t eye::scan(const uint8_t* image) noexcept
 
     // Find first point of the last segment.
     search_distance = std::numeric_limits<double>::max();
-    for (size_t pi = 0, psize = segments[sl.index].size(); pi + 1 < psize; pi++) {
+    for (size_t pi = 0, psize = segments[sl.index].size(); pi < psize; pi++) {
       if (pi == sl.last) {
         continue;
       }

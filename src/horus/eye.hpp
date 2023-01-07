@@ -142,9 +142,13 @@ public:
     std::memset(targets_overlay_.data(), 0, sw * sh);
     cv::fillPoly(targets_overlay_image_, targets_, cv::Scalar(255), cv::LINE_AA);
     draw(image, color, targets_overlay_);
+  }
+
+  void draw_points(uint8_t* image, uint32_t color) noexcept
+  {
     for (const auto& target : targets_) {
       for (size_t i = 0, size = target.size(); i < size; i++) {
-        draw(image, 0xFFFFFF88, target[i]);
+        draw(image, color, target[i]);
       }
     }
   }
@@ -210,7 +214,6 @@ private:
   std::vector<uint8_t> targets_overlay_{ std::vector<uint8_t>(sw * sh) };
   cv::Mat targets_overlay_image_{ sw, sh, CV_8UC1, targets_overlay_.data(), sw };
 
-  std::vector<cv::Point> connections_;
   std::vector<cv::Vec4i> hierarchy_;
 };
 

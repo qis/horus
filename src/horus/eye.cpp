@@ -282,8 +282,6 @@ size_t eye::scan(const uint8_t* image) noexcept
   };
   // clang-format on
 
-  connections_.clear();
-
   struct segment {
     size_t index{ 0 };
     size_t first{ 0 };
@@ -415,22 +413,13 @@ size_t eye::scan(const uint8_t* image) noexcept
       }
     }
     target.push_back(segments[sl.index][sl.last]);
-    //target.push_back(segments[0][sf.first]);
-    
-
-    if (const auto target_size = target.size(); target_size) {
-      connections_.push_back(target[0]);
-      if (target_size > 1) {
-        connections_.push_back(target[target.size() - 1]);
-      }
-    }
   }
 
   // Remove targets with less, than three vertices.
   // clang-format off
-  //targets_.erase(std::remove_if(targets_.begin(), targets_.end(), [](const auto& polygon) {
-  //  return polygon.size() < 3;
-  //}), targets_.end());
+  targets_.erase(std::remove_if(targets_.begin(), targets_.end(), [](const auto& polygon) {
+    return polygon.size() < 3;
+  }), targets_.end());
   // clang-format on
 
   timings_.emplace_back(clock::now(), "targets");

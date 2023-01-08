@@ -254,6 +254,94 @@ size_t eye::scan(const uint8_t* image) noexcept
   std::vector<size_t> connected;
 
   // clang-format off
+  constexpr auto next_point = [](
+    size_t index, size_t size, bool forward
+  ) noexcept -> size_t {
+    assert(size);
+    assert(index < size);
+    if (forward) {
+      index++;
+      if (index == size) {
+        return 0;
+      }
+      return index;
+    }
+    if (index == 0) {
+      return size - 1;
+    }
+    return index - 1;
+  };
+
+  constexpr auto furthest_point = [](
+    const polygon& segment, size_t size, size_t index
+  ) noexcept -> std::pair<size_t, bool> {
+    assert(size == segment.size());
+    assert(size);
+    assert(index < size);
+
+    if (size == 1) {
+      return { index, true };
+    }
+
+    if (size == 2) {
+      return { next_point(index, size, true), true };
+    }
+
+    auto fp = index;
+    auto fd = cv::norm(segment[fp] - segment[index]);
+
+    auto bp = index;
+    auto bd = cv::norm(segment[bp] - segment[index]);
+
+    do {
+      auto np = next_point(fp, size, true);
+      fd += cv::norm(segment[fp] - segment[np]);
+      fp = np;
+
+      if (fp == bp) {
+        break;
+      }
+
+      np = next_point(bp, size, false);
+      bd += cv::norm(segment[bp] - segment[np]);
+      bp = np;
+    } while (fp != bp);
+    
+    if (fd > bd) {
+      return { fp, true };
+    }
+    return { bp, false };
+  };
+
+  constexpr auto longest_path_forward = [](
+    const polygon& segment, size_t size, size_t first, size_t last
+  ) noexcept -> bool {
+    assert(size == segment.size());
+    assert(size);
+    assert(first < size);
+    assert(last < size);
+
+    if (first == last) {
+      return true;
+    }
+
+    double forward_distance = 0.0;
+    for (auto i = first; i != last;) {
+      const auto n = next_point(i, size, true);
+      forward_distance += cv::norm(segment[n] - segment[i]);
+      i = n;
+    }
+
+    double backward_distance = 0.0;
+    for (auto i = first; i != last;) {
+      const auto n = next_point(i, size, false);
+      backward_distance += cv::norm(segment[n] - segment[i]);
+      i = n;
+    }
+
+    return forward_distance > backward_distance;
+  };
+
   const auto find_closest_segment = [&connected](
     const std::vector<polygon>& segments,
     const cv::Point& point,
@@ -271,7 +359,7 @@ size_t eye::scan(const uint8_t* image) noexcept
       }
       for (size_t j = 0, jsize = segments[i].size(); j < jsize; j++) {
         const auto distance = cv::norm(segments[i][j] - point);
-        if (distance < search_distance) {
+        if (distance < 128.0 && distance < search_distance) {
           search_distance = distance;
           segment_point_index = j;
           segment_index = i;
@@ -286,8 +374,9 @@ size_t eye::scan(const uint8_t* image) noexcept
     size_t index{ 0 };
     size_t first{ 0 };
     size_t last{ 0 };
+    size_t size{ 0 };
+    bool forward{ true };
   };
-
 
   targets_.clear();
   targets_.resize(groups_.size());
@@ -309,6 +398,7 @@ size_t eye::scan(const uint8_t* image) noexcept
 
     // First segment.
     segment sf;
+    sf.size = segments[sf.index].size();
 
     // Last segment.
     segment sl;
@@ -325,22 +415,21 @@ size_t eye::scan(const uint8_t* image) noexcept
         search_distance = distance;
       }
     }
+    sl.size = segments[sl.index].size();
 
     // Set last point of the first segment in case there are only two segments.
-    if (sf.first == 0) {
-      assert(!segments[0].empty());
-      sf.last = segments[0].size() - 1;
-    } else {
-      sf.last = sf.first - 1;
-    }
+    std::tie(sf.last, sf.forward) = furthest_point(segments[sf.index], sf.size, sf.first);
 
-    // Prevent find_closest_polygon from searching the last segment. 
+    // Set first point of the last segment in case there are only two segments.
+    std::tie(sl.first, sl.forward) = furthest_point(segments[sl.index], sl.size, sl.last);
+
+    // Prevent find_closest_segment from using the last segment.
     connected.push_back(sl.index);
 
-    // Current segment.
+    // Use first segment as the starting current segment.
     auto sc = sf;
 
-    while (connected.size() + 1 < segments_size) {
+    while (connected.size() < segments_size) {
       // Find next segment.
       segment sn;
       search_distance = std::numeric_limits<double>::max();
@@ -367,23 +456,25 @@ size_t eye::scan(const uint8_t* image) noexcept
           search_distance = distance;
         }
       }
-      
+
+      // Use last segment to set the last point of the current segment if there is no next segment.
+      if (!sn.index) {
+        search_distance = std::numeric_limits<double>::max();
+        for (size_t pi = 0, psize = segments[sc.index].size(); pi < psize; pi++) {
+          const auto distance = cv::norm(segments[sl.index][sl.first] - segments[sc.index][pi]);
+          if (distance < search_distance) {
+            sc.last = pi;
+            search_distance = distance;
+          }
+        }
+      }
+
       // Connect current segment.
-      const auto segment_size = segments[sc.index].size();
-      assert(segment_size);
+      const auto size = segments[sc.index].size();
+      sc.forward = longest_path_forward(segments[sc.index], size, sc.first, sc.last);
       for (size_t pi = sc.first; pi != sc.last;) {
         target.push_back(segments[sc.index][pi]);
-        if (sc.first < sc.last) {
-          pi++;
-          if (pi >= segment_size) {
-            pi = 0;
-          }
-        } else {
-          if (pi == 0) {
-            pi = segment_size;
-          }
-          pi--;
-        }
+        pi = next_point(pi, size, sc.forward);
       }
       target.push_back(segments[sc.index][sc.last]);
       connected.push_back(sc.index);
@@ -397,40 +488,12 @@ size_t eye::scan(const uint8_t* image) noexcept
       sc = sn;
     };
 
-    // Connect first segment if there are only two segments.
-    assert(!target.empty());
-
-    // Find first point of the last segment.
-    search_distance = std::numeric_limits<double>::max();
-    for (size_t pi = 0, psize = segments[sl.index].size(); pi < psize; pi++) {
-      if (pi == sl.last) {
-        continue;
-      }
-      const auto distance = cv::norm(segments[sl.index][pi] - target[target.size() - 1]);
-      if (distance < search_distance) {
-        search_distance = distance;
-        sl.first = pi;
-      }
-    }
-
     // Connect last segment.
-    const auto segment_size = segments[sl.index].size();
-    assert(segment_size);
+    const auto size = segments[sl.index].size();
     for (size_t pi = sl.first; pi != sl.last;) {
       target.push_back(segments[sl.index][pi]);
-      if (sl.first < sl.last) {
-        pi++;
-        if (pi >= segment_size) {
-          pi = 0;
-        }
-      } else {
-        if (pi == 0) {
-          pi = segment_size;
-        }
-        pi--;
-      }
+      pi = next_point(pi, size, sl.forward);
     }
-    target.push_back(segments[sl.index][sl.last]);
   }
 
   // Remove targets with less, than three vertices.
@@ -441,207 +504,6 @@ size_t eye::scan(const uint8_t* image) noexcept
   // clang-format on
 
   timings_.emplace_back(clock::now(), "targets");
-
-#if 0
-  // Creaate targets by connecting groups.
-  targets_.clear();
-  targets_.resize(groups_.size());
-  std::vector<size_t> connected;
-  for (size_t i = 0, size = groups_.size(); i < size; i++) {
-    const auto& group = groups_[i];
-    auto& target = targets_[i];
-
-    const auto group_size = group.size();
-
-    // If there is only one polygon in a group, add it as a target.
-    if (group_size < 2) {
-      if (group_size == 1) {
-        target = group[0];
-      }
-      continue;
-    }
-
-    // First polygon.
-    const auto& polygon_first = group[0];
-    const auto polygon_first_size = polygon_first.size();
-
-    // Last point of the first polygon.
-    size_t polygon_first_end = 0;
-
-    // Index of the next polygon.
-    size_t polygon_next = 0;
-
-    // Index of the first point in the next polygon.
-    size_t polygon_next_begin = 0;
-
-    // Used for the search of the closest adjacent polygon.
-    auto search_distance = std::numeric_limits<double>::max();
-
-    // Find polygon that is closest to one of the points of the first polygon.
-    for (size_t pi = 0, psize = group[0].size(); pi < psize; pi++) {
-      // Iterate over the other polygons in this group.
-      for (size_t gi = 1; gi < group_size; gi++) {
-        // Iterate over the points of the other polygon.
-        for (size_t ai = 0, asize = group[gi].size(); ai < asize; ai++) {
-          const auto distance = cv::norm(group[gi][ai] - group[0][pi]);
-          if (distance < search_distance) {
-            search_distance = distance;
-            polygon_first_end = pi;
-            polygon_next_begin = ai;
-            polygon_next = gi;
-          }
-        }
-      }
-    }
-
-    // Connect all polygons except first and last.
-    connected.clear();
-    connected.reserve(group_size);
-    while (connected.size() < group_size - 2) {
-      // Current polygon.
-      const auto polygon_index = polygon_next;
-      const auto& polygon = group[polygon_index];
-      const auto polygon_size = polygon.size();
-
-      // First point of the current polygon.
-      const auto polygon_begin = polygon_next_begin;
-
-      // Find last point of the current polygon.
-      auto polygon_end = polygon_begin;
-      search_distance = std::numeric_limits<double>::max();
-      for (size_t pi = 0; pi < polygon_size; pi++) {
-        // Skip first point of the current polygon.
-        if (pi == polygon_begin) {
-          continue;
-        }
-
-        // Iterate over the other polygons in this group.
-        for (size_t gi = 1; gi < group_size; gi++) {
-          // Skip current polygon.
-          if (gi == polygon_index) {
-            continue;
-          }
-
-          // Skip polygons that are already connected.
-          if (std::find(connected.begin(), connected.end(), gi) != connected.end()) {
-            continue;
-          }
-
-          // Iterate over the points of the other polygon.
-          for (size_t ai = 0, asize = group[gi].size(); ai < asize; ai++) {
-            const auto distance = cv::norm(group[gi][ai] - polygon[pi]);
-            if (distance < search_distance) {
-              search_distance = distance;
-              polygon_end = pi;
-              polygon_next_begin = ai;
-              polygon_next = gi;
-            }
-          }
-        }
-      }
-
-      // Connect current polygon.
-      for (auto pi = polygon_begin; pi != polygon_end;) {
-        target.push_back(polygon[pi]);
-        if (polygon_begin < polygon_end) {
-          if (pi == polygon_size - 1) {
-            pi = 0;
-          } else {
-            pi++;
-          }
-        } else {
-          if (pi == 0) {
-            pi = polygon_size - 1;
-          } else {
-            pi--;
-          }
-        }
-      }
-      target.push_back(polygon[polygon_end]);
-      connected.push_back(polygon_index);
-    }
-
-    // Target.
-    assert(!targets_.empty());
-
-    // Last polygon.
-    const auto& polygon_last = group[group.size() - 1];
-    const auto polygon_last_size = polygon_last.size();
-
-    // Find first point of the last polygon.
-    size_t polygon_last_begin = 0;
-    search_distance = std::numeric_limits<double>::max();
-    for (size_t ai = 0, asize = polygon_last.size(); ai < asize; ai++) {
-      const auto distance = cv::norm(polygon_last[ai] - target[target.size() - 1]);
-      if (distance < search_distance) {
-        search_distance = distance;
-        polygon_last_begin = ai;
-      }
-    }
-
-    // Find first point of the first polygon and last point of the last polygon.
-    auto polygon_first_begin = polygon_first_end;
-    auto polygon_last_end = polygon_last_begin;
-    search_distance = std::numeric_limits<double>::max();
-    for (size_t fi = 0; fi < polygon_first_size; fi++) {
-      for (size_t li = 0; li < polygon_last_size; li++) {
-        const auto distance = cv::norm(polygon_last[li] - polygon_first[fi]);
-        if (distance < search_distance) {
-          search_distance = distance;
-          polygon_first_begin = fi;
-          polygon_last_end = li;
-        }
-      }
-    }
-
-    // Connect last polygon.
-    for (auto pi = polygon_last_begin; pi != polygon_last_end;) {
-      target.push_back(polygon_last[pi]);
-      if (polygon_last_begin < polygon_last_end) {
-        if (pi == polygon_last_size - 1) {
-          pi = 0;
-        } else {
-          pi++;
-        }
-      } else {
-        if (pi == 0) {
-          pi = polygon_last_size - 1;
-        } else {
-          pi--;
-        }
-      }
-    }
-    target.push_back(polygon_last[polygon_last_end]);
-
-    // Connect first polygon.
-    for (auto pi = polygon_first_begin; pi != polygon_first_end;) {
-      target.push_back(polygon_first[pi]);
-      if (polygon_first_begin < polygon_first_end) {
-        if (pi == polygon_first_size - 1) {
-          pi = 0;
-        } else {
-          pi++;
-        }
-      } else {
-        if (pi == 0) {
-          pi = polygon_first_size - 1;
-        } else {
-          pi--;
-        }
-      }
-    }
-    target.push_back(polygon_first[polygon_first_end]);
-  }
-
-  // Remove targets with less, than three vertices.
-  // clang-format off
-  targets_.erase(std::remove_if(targets_.begin(), targets_.end(), [](const auto& polygon) {
-    return polygon.size() < 3;
-  }), targets_.end());
-  // clang-format on
-
-  timings_.emplace_back(clock::now(), "targets");
-#endif
 
   return 0;
 }
@@ -775,339 +637,5 @@ void eye::draw(uint8_t* image, uint32_t color, const cv::Point& point) noexcept
   // Line 6.
   set(di, ooc, 4);
 }
-
-#if 0
-eye::eye()
-{
-  hierarchy_.reserve(1024);
-  contours_.reserve(1024);
-  polygons_.reserve(1024);
-}
-
-std::optional<eye::target> eye::scan(const uint8_t* image, int32_t mx, int32_t my) noexcept
-{
-  // Vertical iteration range.
-  const auto range = tbb::blocked_range<size_t>(1, sh - 1, 64);
-
-  // Draw outlines.
-  std::memset(outlines_.data(), 0, sw * sh);
-  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
-    const auto rb = range.begin();
-    const auto re = range.end();
-    auto si = image + rb * sw * 4;         // src iterator
-    auto di = outlines_.data() + rb * sw;  // dst iterator
-    for (auto y = rb; y < re; y++) {
-      si += 4;
-      di += 1;
-      for (auto x = 1; x < sw - 1; x++) {
-        constexpr auto er = (ec >> 16 & 0xFF);  // minimum red
-        constexpr auto eg = (ec >> 8 & 0xFF);   // maximum green
-        constexpr auto eb = (ec & 0xFF);        // minimum blue
-
-        di[0] = si[0] > er && si[1] < eg && si[2] > eb ? 0x01 : 0x00;
-
-        si += 4;
-        di += 1;
-      }
-      si += 4;
-      di += 1;
-    }
-  });
-
-  // Remove single outline pixels and those who have too many outline pixels as neighbours.
-  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
-    const auto rb = range.begin();
-    const auto re = range.end();
-    auto si = outlines_.data() + rb * sw;  // src iterator
-    auto pi = si - sw;                     // pixel above the src iterator
-    auto ni = si + sw;                     // pixel below the src iterator
-    for (auto y = rb; y < re; y++) {
-      for (auto x = 1; x < sw - 0; x++) {
-        if (si[1]) {
-          const auto count = pi[0] + pi[1] + pi[2] + si[0] + si[1] + si[2] + ni[0] + ni[1] + ni[2];
-          if (count == 1 || count > 6) {
-            si[1] = 0x00;
-          }
-        }
-        si += 1;
-        pi += 1;
-        ni += 1;
-      }
-      si += 2;
-      pi += 2;
-      ni += 2;
-    }
-  });
-
-  // Ignore frames with too many outline pixels.
-  if (std::reduce(std::begin(outlines_), std::end(outlines_), uint32_t(0)) > sw * sh / 64) {
-    return std::nullopt;
-  }
-
-  // Close small gaps in outlines.
-  cv::morphologyEx(outlines_image_, outlines_image_, cv::MORPH_CLOSE, close_kernel_);
-
-  // Find countours.
-  cv::findContours(outlines_image_, contours_, hierarchy_, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-  // Find polygons.
-  polygons_.resize(contours_.size());
-  for (size_t i = 0, m = contours_.size(); i < m; i++) {
-    cv::convexHull(cv::Mat(contours_[i]), polygons_[i]);
-  }
-
-  // Remove polygons with small areas.
-  // clang-format off
-  polygons_.erase(std::remove_if(polygons_.begin(), polygons_.end(), [](const auto& points) {
-    return cv::contourArea(points) < minimum_contour_area;
-  }), polygons_.end());
-  // clang-format on
-
-  // Draw polygons.
-  std::memset(overlays_.data(), 0, sw * sh);
-  for (size_t i = 0, m = polygons_.size(); i < m; i++) {
-    cv::drawContours(overlays_image_, polygons_, i, cv::Scalar(255), -1, cv::LINE_4);
-  }
-
-  // Count overlay pixels inside polygons.
-  polygons_fill_count_.assign(polygons_.size(), 0);
-  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
-    const auto rb = range.begin();
-    const auto re = range.end();
-    auto si = outlines_.data() + rb * sw;  // src iterator
-    for (auto y = rb; y < re; y++) {
-      for (auto x = 0; x < sw; x++) {
-        if (si[0]) {
-          for (size_t i = 0, m = polygons_.size(); i < m; i++) {
-            if (cv::pointPolygonTest(polygons_[i], cv::Point(x, y), false) > 0) {
-              polygons_fill_count_[i]++;
-            }
-          }
-        }
-        si += 1;
-      }
-    }
-  });
-
-  // Remove polygons with too many overlay pixels.
-  if (maximum_outline_ratio < 1.0) {
-    for (size_t i = 0, m = polygons_.size(); i < m; i++) {
-      if (polygons_fill_count_[i] > cv::contourArea(polygons_[i]) * maximum_outline_ratio) {
-        polygons_[i].clear();
-      }
-    }
-    // clang-format off
-    polygons_.erase(std::remove_if(polygons_.begin(), polygons_.end(), [](const auto& points) {
-      return points.empty();
-    }), polygons_.end());
-    // clang-format on
-  }
-
-  // Connect polygons, which have points close to each other.
-  for (size_t i = 1, m = polygons_.size(); i < m; i++) {
-    for (const auto& p0 : polygons_[i - 1]) {
-      for (const auto& p1 : polygons_[i]) {
-        const auto distance = std::sqrt(std::pow(p1.x - p0.x, 2) + std::pow(p1.y - p0.y, 2));
-        if (distance < polygon_connect_distance) {
-          using std::min, std::max;
-          const auto x0 = min(max(0, p0.x < p1.x ? p0.x - 2 : p0.x + 2), static_cast<int>(sw));
-          const auto y0 = min(max(0, p0.y < p1.y ? p0.y - 2 : p0.y + 2), static_cast<int>(sh));
-          const auto x1 = min(max(0, p1.x < p0.x ? p1.x - 2 : p1.x + 2), static_cast<int>(sw));
-          const auto y1 = min(max(0, p1.y < p0.y ? p1.y - 2 : p1.y + 2), static_cast<int>(sh));
-          polygons_.push_back({ { x0, y0 }, { x1, y1 } });
-          break;
-        }
-      }
-    }
-  }
-
-  // Draw remaining polygons and new connections.
-  std::memset(overlays_.data(), 0, sw * sh);
-  for (size_t i = 0, m = polygons_.size(); i < m; i++) {
-    if (polygons_[i].size() > 2) {
-      cv::drawContours(overlays_image_, polygons_, i, cv::Scalar(255), -1, cv::LINE_4);
-    } else if (polygons_[i].size() == 2) {
-      cv::line(overlays_image_, polygons_[i][0], polygons_[i][1], cv::Scalar(255), 3, cv::LINE_8);
-    }
-  }
-
-  // Remove protrusions.
-  //cv::morphologyEx(overlays_image_, overlays_image_, cv::MORPH_OPEN, cv::Mat::ones(64, 32, CV_8UC1));
-
-  // Erode new contours.
-  cv::erode(overlays_image_, overlays_image_, erode_kernel_);
-
-  // Find new contours.
-  cv::findContours(overlays_image_, contours_, hierarchy_, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-  // Find contour centers and determine closest target.
-  std::optional<target> result;
-  const cv::Point mouse(mx, my);
-  centers_.resize(contours_.size());
-  for (size_t i = 0, m = contours_.size(); i < m; i++) {
-    const auto size = contours_[i].size();
-    if (!size) {
-      continue;
-    }
-
-    auto ax = 0;
-    auto ay = 0;
-    auto al = static_cast<int>(sw);
-    auto at = static_cast<int>(sh);
-    auto ar = 0;
-    auto ab = 0;
-    for (const auto& point : contours_[i]) {
-      ax += point.x;
-      if (point.x < al) {
-        al = point.x;
-      } else if (point.x > ar) {
-        ar = point.x;
-      }
-      ay += point.y;
-      if (point.y < at) {
-        at = point.y;
-      } else if (point.y > ab) {
-        ab = point.y;
-      }
-    }
-    if (ar < al) {
-      ar = al;
-    }
-    if (ab < at) {
-      ab = at;
-    }
-    const auto aw = ar - al;
-    const auto ah = ab - at;
-    centers_[i] = cv::Point(ax / size, ay / size);
-    if (const auto d = cv::norm(mouse - centers_[i]); !result || d < result->distance) {
-      result.emplace(centers_[i], d, aw, ah);
-    }
-  }
-
-  return result;
-}
-
-void eye::draw(uint8_t* image, int64_t pf, int64_t ps, int64_t cc) noexcept
-{
-  // Find new polygons.
-  if (contours_.size()) {
-    polygons_.resize(contours_.size());
-    for (size_t i = 0, m = contours_.size(); i < m; i++) {
-      cv::convexHull(cv::Mat(contours_[i]), polygons_[i]);
-    }
-  }
-
-  // Fill polygons.
-  if (pf >= 0 && polygons_.size()) {
-    std::memset(overlays_.data(), 0, sw * sh);
-    for (size_t i = 0, m = polygons_.size(); i < m; i++) {
-      cv::drawContours(overlays_image_, polygons_, i, cv::Scalar(255), -1, cv::LINE_AA);
-    }
-    draw_overlays(image, static_cast<uint32_t>(pf));
-  }
-
-  // Draw polygons.
-  if (ps >= 0 && polygons_.size()) {
-    std::memset(overlays_.data(), 0, sw * sh);
-    for (size_t i = 0, m = polygons_.size(); i < m; i++) {
-      cv::drawContours(overlays_image_, polygons_, i, cv::Scalar(255), 1, cv::LINE_AA);
-    }
-    draw_overlays(image, static_cast<uint32_t>(ps));
-  }
-
-  // Draw centers.
-  constexpr auto set = [](uint8_t* di, const overlay_color& color, unsigned count) noexcept {
-    for (unsigned i = 0; i < count; i++) {
-      color.apply(di);
-      di += 4;
-    }
-    return count * 4;
-  };
-
-  if (cc >= 0 && centers_.size() == contours_.size()) {
-    for (size_t i = 0, m = contours_.size(); i < m; i++) {
-      if (!contours_[i].size()) {
-        continue;
-      }
-      const auto sx = static_cast<long>(centers_[i].x);
-      const auto sy = static_cast<long>(centers_[i].y);
-
-      constexpr const overlay_color ooc(0x000000FF);
-      const overlay_color oic(cc);
-
-      auto di = image + (sy - 2) * sw * 4 + (sx - 2) * 4;  // dst iterator
-
-      // Line 1.
-      di += set(di, ooc, 4);
-      di += sw * 4 - 5 * 4;
-
-      // Line 2.
-      di += set(di, ooc, 2);
-      di += set(di, oic, 2);
-      di += set(di, ooc, 2);
-      di += sw * 4 - 6 * 4;
-
-      // Line 3.
-      di += set(di, ooc, 1);
-      di += set(di, oic, 4);
-      di += set(di, ooc, 1);
-      di += sw * 4 - 6 * 4;
-
-      // Line 4.
-      di += set(di, ooc, 1);
-      di += set(di, oic, 4);
-      di += set(di, ooc, 1);
-      di += sw * 4 - 6 * 4;
-
-      // Line 5.
-      di += set(di, ooc, 2);
-      di += set(di, oic, 2);
-      di += set(di, ooc, 2);
-      di += sw * 4 - 5 * 4;
-
-      // Line 6.
-      set(di, ooc, 4);
-    }
-  }
-}
-
-void eye::desaturate(uint8_t* image) noexcept
-{
-  const auto range = tbb::blocked_range<size_t>(0, sh, 64);
-  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
-    const auto rb = range.begin();
-    const auto re = range.end();
-    auto di = image + rb * sw * 4;  // dst iterator
-    for (auto y = rb; y < re; y++) {
-      for (auto x = 0; x < sw; x++) {
-        di += rgba2gray(di);
-        ;
-      }
-    }
-  });
-}
-
-void eye::draw_overlays(uint8_t* image, uint32_t ec) noexcept
-{
-  const auto range = tbb::blocked_range<size_t>(0, sh, 64);
-  const auto color = overlay_color(static_cast<uint32_t>(ec));
-  tbb::parallel_for(range, [&](const tbb::blocked_range<size_t>& range) {
-    const size_t rb = range.begin();
-    const size_t re = range.end();
-    auto si = overlays_.data() + rb * sw;  // src iterator
-    auto di = image + rb * sw * 4;         // dst iterator
-    for (auto y = rb; y < re; y++) {
-      for (auto x = 0; x < sw; x++) {
-        if (*si > 0) {
-          color.apply(di, *si / 255.0f);
-        }
-        si += 1;
-        di += 4;
-      }
-    }
-  });
-}
-
-#endif
 
 }  // namespace horus

@@ -114,9 +114,10 @@ bool hid::get(keybd& state) noexcept
   if (SUCCEEDED(hr)) {
     state.b = keybd_state_[DIK_B] & 0x80 ? true : false;
     state.c = keybd_state_[DIK_C] & 0x80 ? true : false;
+    state.q = keybd_state_[DIK_Q] & 0x80 ? true : false;
     state.r = keybd_state_[DIK_R] & 0x80 ? true : false;
     state.s = keybd_state_[DIK_S] & 0x80 ? true : false;
-    state.q = keybd_state_[DIK_Q] & 0x80 ? true : false;
+    state.w = keybd_state_[DIK_W] & 0x80 ? true : false;
     state.shift = keybd_state_[DIK_LSHIFT] & 0x80 ? true : false;
     state.space = keybd_state_[DIK_SPACE] & 0x80 ? true : false;
     state.enter = keybd_state_[DIK_RETURN] & 0x80 ? true : false;

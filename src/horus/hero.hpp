@@ -117,11 +117,11 @@ public:
     using namespace std::chrono_literals;
 
     // Update input tricks.
-    const auto s_key = s_key_;
-    s_key_ = keybd.s;
-
     const auto q_key = q_key_;
     q_key_ = keybd.q;
+
+    const auto s_key = s_key_;
+    s_key_ = keybd.s;
 
     const auto space_key = space_key_;
     space_key_ = keybd.space;
@@ -132,8 +132,8 @@ public:
     const auto menu_key = menu_key_;
     menu_key_ = keybd.menu;
 
-    // Disable on b, enter, escape, windows key and menu + tab.
-    if (keybd.b || keybd.enter || keybd.escape || keybd.win || (keybd.menu && keybd.tab)) {
+    // Disable enter, escape, windows key and menu + tab.
+    if (keybd.enter || keybd.escape || keybd.win || (keybd.menu && keybd.tab)) {
       if (enabled_) {
         client_.mask(rock::button::up, std::chrono::milliseconds(0));
         glide_update_ = {};
@@ -152,9 +152,11 @@ public:
       return;
     }
 
-    // TODO: Add new stage:
-    // - GA forward on W release and press while shift is held (like S).
-    // - Cancel GA if W, S or SPACE were not pressed.
+    // Stop Glide on b.
+    if (glide_ && keybd.b) {
+      client_.mask(rock::button::up, 0ms);
+      glide_ = false;
+    }
 
     // Required Movement Options
     // ===========================
@@ -238,8 +240,8 @@ public:
 private:
   bool enabled_{ true };
 
-  bool s_key_{ false };
   bool q_key_{ false };
+  bool s_key_{ false };
   bool space_key_{ false };
   bool shift_key_{ false };
   bool menu_key_{ false };

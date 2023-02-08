@@ -9,7 +9,7 @@ This is a hobby. I write cheats for games once every few years.
 
 Usually, there are two types of cheats.
 
-1. Internal - when the game process is hooked and forced to run your code. 
+1. Internal - when the game process is hooked and executes your code.<br/>
    An example for CS:GO can be found [here](https://github.com/qis/jeeves).
 
 2. External - when the game memory is read by an external process.<br/>

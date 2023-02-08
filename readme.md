@@ -16,7 +16,9 @@ This repository exists for demonstration purposes only. Instructions are for the
 5. Clone this repository to `C:\OBS\horus`.
 
 ```cmd
-git clone --recurse-submodules --shallow-submodules git@github.com:qis/horus C:/OBS/horus
+git clone git@github.com:qis/horus C:/OBS/horus
+cd C:\OBS\horus
+git submodule update --init --depth 1
 ```
 
 6. Install dependencies using [Conan][conan].

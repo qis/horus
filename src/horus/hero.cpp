@@ -5,14 +5,14 @@
 namespace horus::hero {
 namespace {
 
-constexpr auto mf = 0.0442846;
+constexpr auto mf = 0.0442846f;
 
-__forceinline cv::Point mouse2view(int mx, int my) noexcept
+__forceinline std::pair<float, float> mouse2view(int mx, int my) noexcept
 {
-  return { static_cast<int>(mx * mf), static_cast<int>(my * mf) };
+  return { mx * mf, my * mf };
 }
 
-constexpr std::pair<std::int16_t, std::int16_t> view2mouse(double mx, double my) noexcept
+constexpr std::pair<std::int16_t, std::int16_t> view2mouse(float mx, float my) noexcept
 {
   return { static_cast<std::int16_t>(mx / mf), static_cast<std::int16_t>(my / mf) };
 }
@@ -111,7 +111,9 @@ public:
   void scan(int mx, int my) noexcept override
   {
     // Update mouse movement.
-    md_ = mouse2view(mx, my);
+    std::tie(mx_, my_) = mouse2view(mx, my);
+    md_.x = mx_;
+    md_.y = my_;
 
     // Acquire target.
     target_ = false;
@@ -141,7 +143,9 @@ public:
   }
 
 private:
-  cv::Point md_{ 0, 0 };
+  float mx_{};
+  float my_{};
+  cv::Point md_{};
   bool target_{ false };
   clock::time_point lockout_{};
 };
@@ -373,7 +377,9 @@ public:
   void scan(int mx, int my) noexcept override
   {
     // Update mouse movement.
-    md_ = mouse2view(mx, my) * 2.0;
+    std::tie(mx_, my_) = mouse2view(mx, my);
+    md_.x = mx_ * 2;
+    md_.y = my_ * 2;
 
     // Create points between mouse movement and center of view.
     connect_view_points(points_, eye::vc + md_, eye::vc, 1);
@@ -401,9 +407,17 @@ public:
 
     // Adjust crosshair and fire.
     if (target_) {
-      if (md_.x > 10 || md_.y > 10) {
-        std::tie(mx, my) = view2mouse(md_.x, md_.y);
-        move(-mx, -my);
+      if (std::abs(mx_) > 4.0f || std::abs(my_) > 4.0f) {
+        auto vx = -mx_;
+        if (std::abs(vx) > 8) {
+          vx = vx < 0.0f ? -8.0f : 8.0f;
+        }
+        auto vy = -my_;
+        if (std::abs(vy) > 8) {
+          vy = vy < 0.0f ? -8.0f : 8.0f;
+        }
+        const auto md = view2mouse(vx, vy);
+        move(md.first, md.second);
       }
       mask(button::up, 16ms);
       lockout_ = now + 128ms;
@@ -415,7 +429,7 @@ public:
     info_.clear();
     eye_.draw_targets(overlay);
     eye_.draw(overlay, eye::vc + md_, target_ ? 0xD50000FF : 0x00B0FFFF);
-    std::format_to(std::back_inserter(info_), "{:04d} {:04d}", md_.x, md_.y);
+    std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mx_, my_);
     eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
     return false;
   }
@@ -430,7 +444,9 @@ public:
 
 private:
   std::string info_;
-  cv::Point md_{ 0, 0 };
+  float mx_{};
+  float my_{};
+  cv::Point md_{};
   std::vector<cv::Point> points_;
   bool target_{ false };
   clock::time_point lockout_{};

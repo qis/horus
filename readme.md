@@ -4,6 +4,55 @@ OBS plugin for Overwatch enemy detection using OpenCV and CUDA in under one mill
 At 120 FPS, the total delay between mouse movement recognized by the system (DirectInput)
 and new enemy positions recognized by the plugin ranges between 0.6 and 13.6 ms.
 
+## Why
+This is a hobby. I write cheats for games once every few years.
+
+Usually, there are two types of cheats.
+
+1. Internal - when the game process is hooked and forced to run your code. 
+   An example for CS:GO can be found [here](https://github.com/qis/jeeves).
+
+2. External - when the game memory is read by an external process.<br/>
+   An example for Overwatch that uses a system driver can be found
+   [here](https://github.com/qis/overwatch).
+
+There are ways to detect both approaches, even if anti-cheat software fails to do so.
+
+This project falls into a separate category that uses image processing to detect enemies on
+the screen and external hardware that simulates a mouse for input.
+
+Detecting this solution without limiting the use of legitimate software like OBS is much
+harder and nobody has done this yet.
+
+## How
+Here is a short summary of what this plugin does.
+
+* Registers itself as a filter plygin in OBS and receives captured frames from it.
+
+![Scan](res/images/scan.png "Scan")
+
+* Converts each frame to the HSV colorspace and searches for colors that match enemy outlines.
+* Copies detected enemy outline colors as a grayscale image to system memory.
+* Uses CUDA to mask and remove pixels that are likely player names, special effects, etc.
+
+![Mask](res/images/mask.png "Mask")
+
+* Uses OpenCV to detect the remaining outlines as contours.
+* Groups contours that likely belong to the same target.
+* Creates convex hulls as target representations.
+
+![Target](res/images/target.png "Target")
+
+* Simulates mouse clicks when a target is under the cursor (with prediction).
+
+## Next
+This is a simple demo and many things can be improved. The following features will be added
+in the future when I have time.
+
+* Create concave hulls as target representations.
+* Track targets to predict their movement in 3D space.
+* Train a neural network to categorize the targets.
+
 <details>
 <summary>Installation</summary>
 

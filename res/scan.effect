@@ -1,0 +1,93 @@
+uniform float4x4 ViewProj;
+uniform texture2d frame;
+
+sampler_state textureSampler {
+  Filter   = Linear;
+  AddressU = Border;
+  AddressV = Border;
+};
+
+struct VertDataIn {
+  float4 pos : POSITION;
+  float2 uv  : TEXCOORD0;
+};
+
+struct VertDataOut {
+  float4 pos : POSITION;
+  float2 uv  : TEXCOORD0;
+};
+
+VertDataOut VSDefault(VertDataIn vi) {
+  VertDataOut vo;
+  vo.pos = mul(float4(vi.pos.xyz, 1.0), ViewProj);
+  vo.uv = vi.uv;
+  return vo;
+}
+
+float PSColorMask(VertDataOut vi) : TARGET {
+  const float4 src = frame.Sample(textureSampler, vi.uv);
+  const float min = src.r < src.g ? (src.r < src.b ? src.r : src.b) : (src.g < src.b ? src.g : src.b);
+  const float max = src.r > src.g ? (src.r > src.b ? src.r : src.b) : (src.g > src.b ? src.g : src.b);
+  float h = 0.0;        // 0 - 360°
+  float s = 0.0;        // 0 - 100%
+  float v = max * 100;  // 0 - 100%
+  if (max > 0 && max - min > 0) {
+    s = (max - min) / max * 100;
+    if (max == src.r) {
+      h = 60 * ((src.g - src.b) / (max - min));
+    } else if (max == src.g) {
+      h = 60 * ((src.b - src.r) / (max - min)) + 120;
+    } else {
+      h = 60 * ((src.r - src.g) / (max - min)) + 240;
+    }
+  }
+  if (h < 0) {
+    h += 360.0;
+  }
+
+  // HSV colors under different conditions, obscured by bastion muzzle flash, obscured by graviton surge.
+  //
+  // Close range with good visibility.
+  // 302.0° 88.2% 79.6%, 316.5° 68.9% 99.6%, 298.3° 84.7% 99.9%
+  // 295.4° 75.1% 96.1%, 299.7° 69.0% 99.9%, 296.7° 95.8% 74.9%
+  // 296.4° 73.0% 98.8%, 309.6° 68.9% 99.6%, 298.3° 94.2% 74.5%
+  //
+  // Long range with good visibility.
+  // 305.7° 73.0% 74.1%, 339.4° 51.6% 99.6%, 299.6° 67.1% 99.9%
+  // 293.3° 69.1% 81.2%, 299.5° 51.8% 99.9%, 279.4° 63.5% 98.8%
+  // 294.0° 57.1% 96.9%, 299.5° 51.8% 99.9%, 284.6° 74.7% 88.2%
+  //
+
+  // Maximum, minimum, optimal H values and mix factor.
+  static const float hmax = 340;
+  static const float hmin = 270;
+  static const float hopt = 300;
+  static const float hmix = 0.5;
+
+  // Minimum, optimal S values and mix factor.
+  static const float smin = 50;
+  static const float sopt = 70;
+  static const float smix = 0.3;
+
+  // Minimum V values and mix factor.
+  static const float vmin = 60;
+  static const float vmix = 0.2;
+
+  // Initial value for masked outlines (0x01).
+  static const float mset = 1.0 / 255;
+
+  if (h < hmax && h > hmin && s > smin && v > vmin) {
+    h = h > hopt ? 1 - (h - hopt) / (hmax - hopt) : (h - hmin) / (hopt - hmin);
+    s = s > sopt ? 1 - (s - sopt) / (100  - sopt) : (s - smin) / (sopt - smin);
+    v = (v - vmin) / (100 - vmin);
+    return h * hmix + s * smix + v * vmix > 0.5 ? mset : 0;
+  }
+  return 0;
+}
+
+technique Scan {
+  pass {
+    vertex_shader = VSDefault(vi);
+    pixel_shader  = PSColorMask(vi);
+  }
+}

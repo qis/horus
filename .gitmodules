@@ -1,0 +1,9 @@
+[submodule "res/sounds"]
+	path = res/sounds
+	url = git@github.com:qis/horus-sounds
+[submodule "third_party/opencv/src"]
+	path = third_party/opencv/src
+	url = https://github.com/opencv/opencv
+[submodule "third_party/opencv/contrib"]
+	path = third_party/opencv/contrib
+	url = https://github.com/opencv/opencv_contrib

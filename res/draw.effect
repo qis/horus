@@ -1,0 +1,72 @@
+uniform float4x4 ViewProj;
+uniform texture2d image;
+uniform texture2d overlay;
+uniform bool desaturate = false;
+
+sampler_state textureSampler {
+  Filter   = MIN_MAG_MIP_POINT;
+  AddressU = Border;
+  AddressV = Border;
+};
+
+struct VertDataIn {
+  float4 pos : POSITION;
+  float2 uv  : TEXCOORD0;
+};
+
+struct VertDataOut {
+  float4 pos : POSITION;
+  float2 dst : TEXCOORD0;
+  float2 src : TEXCOORD1;
+};
+
+VertDataOut VSDefault(VertDataIn vi) {
+  // Display and overlay sizes (must be synchronized with src/horus/eye.hpp).
+  static const float dw = 2560.0;  // display width
+  static const float dh = 1080.0;  // display height
+  static const float sw = 1024.0;  // scan width
+  static const float sh = 1024.0;  // scan height
+
+  // Scan offset to display (horizontal).
+  static const float sx = round((dw - sw) / 2.0);
+
+  // Scan offset to display (vertical).
+  static const float sy = round((dh - sh) / 2.0);
+
+  VertDataOut vo;
+  vo.pos = mul(float4(vi.pos.xyz, 1.0), ViewProj);
+  vo.dst = vi.uv;
+  vo.src = vi.uv;
+
+  vo.src.x *= dw / sw;
+  vo.src.y *= dh / sh;
+  vo.src.x -= sx / sw;
+  vo.src.y -= sy / sh;
+
+  return vo;
+}
+
+float4 PSColorMask(VertDataOut vi) : TARGET {
+  float4 dst = image.Sample(textureSampler, vi.dst);
+  if (desaturate) {
+    const float c = dst.r * 0.299 + dst.g * 0.587 + dst.b * 0.114;
+    dst.r = c;
+    dst.g = c;
+    dst.b = c;
+  }
+  const float4 src = overlay.Sample(textureSampler, vi.src);
+  if (src.a > 0.0) {
+    const float m = 1.0 - src.a;
+    dst.r = dst.r * m + src.r * src.a;
+    dst.g = dst.g * m + src.g * src.a;
+    dst.b = dst.b * m + src.b * src.a;
+  }
+  return dst;
+}
+
+technique Draw {
+  pass {
+    vertex_shader = VSDefault(vi);
+    pixel_shader  = PSColorMask(vi);
+  }
+}

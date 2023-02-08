@@ -1,0 +1,7 @@
+/*
+.*
+!/contrib
+!/src
+!/.gitignore
+!/CMakeLists.txt
+!/CMakePresets.json

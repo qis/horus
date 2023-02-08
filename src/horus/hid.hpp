@@ -36,6 +36,7 @@ enum class key : std::uint8_t {
   b       = DIK_B,
   alt     = DIK_LMENU,
   space   = DIK_SPACE,
+  f7      = DIK_F7,
   f8      = DIK_F8,
   f9      = DIK_F9,
   f10     = DIK_F10,

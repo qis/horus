@@ -226,6 +226,17 @@ public:
       overlay_desaturate_ = true;
     }
 
+    // Draw input delay.
+    if (input_.load(std::memory_order_acquire)) {
+      const auto duration = tp1 - input_start_.load(std::memory_order_acquire);
+      const auto duration_ms = duration_cast<milliseconds<float>>(duration).count();
+      std::format_to(std::back_inserter(info_), " | {:5.3f} ms", duration_ms);
+      if (duration > 1s) {
+        bool expected = true;
+        input_.compare_exchange_strong(expected, false);
+      }
+    }
+
     // Draw info text.
     eye_.draw(overlay_, { 2, eye::vh - 20 }, info_);
 
@@ -286,7 +297,15 @@ private:
       hid_.update();
       mx_.fetch_add(hid_.mx());
       my_.fetch_add(hid_.my());
-      if (hid_.pressed(key::f9)) {
+
+      if (hid_.down(key::f7)) {
+        if (hid_.pressed(key::f7)) {
+          hid_.move(800, 0);
+        } else if (hid_.mx()) {
+          input_start_.store(clock::now(), std::memory_order_release);
+          input_.store(true, std::memory_order_release);
+        }
+      } else if (hid_.pressed(key::f9)) {
         hero_ = hero::next_damage_hero(executor, hero_, eye_, hid_);
         announce(hero_->name());
       } else if (hid_.pressed(key::f10)) {
@@ -407,6 +426,9 @@ private:
 
   clock::duration view_duration_{};
   float view_duration_ms_{};
+
+  std::atomic_bool input_{ false };
+  std::atomic<clock::time_point> input_start_;
 
   std::atomic_bool screenshot_{ false };
   std::atomic_size_t screenshot_index_{ 0 };

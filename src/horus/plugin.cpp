@@ -39,6 +39,8 @@ public:
     none,
   };
 
+  static constexpr std::chrono::milliseconds interval{ 200 };
+
   static inline std::atomic<view> draw{ view::none };
 
   plugin(obs_data_t* settings, obs_source_t* context) noexcept :
@@ -171,9 +173,7 @@ public:
     }
 
     // Process scan.
-    if (eye_.scan({ eye::sw, eye::sh, CV_8UC1, data, step })) {
-      scans_++;
-    }
+    const auto scan = eye_.scan({ eye::sw, eye::sh, CV_8UC1, data, step });
 
     // Get mouse movement.
     const auto mt = mt_;
@@ -182,12 +182,13 @@ public:
     mt_ = clock::now();
 
     // Calculate mouse movement until next frame.
-    constexpr milliseconds<float> fd{ 1000.0f / eye::fps };         // frame duration
-    const auto sd = duration_cast<milliseconds<float>>(mt_ - tp0);  // scan duration
-    const auto md = duration_cast<milliseconds<float>>(mt_ - mt);   // move duration
-    const auto mf = md / (fd > sd ? fd - sd : fd);                  // move factor
-    mx /= mf;
-    my /= mf;
+    constexpr milliseconds<float> frame_duration{ 1000.0f / eye::fps };
+    const auto scan_duration = duration_cast<milliseconds<float>>(mt_ - tp0);
+    const auto move_duration = duration_cast<milliseconds<float>>(mt_ - mt);
+    const auto move_factor = move_duration /
+      (frame_duration > scan_duration ? frame_duration - scan_duration : frame_duration);
+    mx /= move_factor;
+    my /= move_factor;
 
     // Process hero.
     if (const auto hero = hero_) {
@@ -196,6 +197,12 @@ public:
 
     // Get info time point.
     const auto tp1 = clock::now();
+
+    // Update scan counter.
+    if (scan) {
+      scan_duration_ += tp1 - tp0;
+      scans_++;
+    }
 
     // Unmap scan texture.
     gs_stagesurface_unmap(scan_stagesurf_);
@@ -287,10 +294,7 @@ public:
     }
 
     // Update frame counter.
-    scan_duration_ += tp1 - tp0;
-    const auto now = clock::now();
-    if (now > frames_timeout_) {
-      constexpr auto interval = 200ms;
+    if (const auto now = clock::now(); now > frames_timeout_) {
       scan_duration_ms_ = duration_cast<milliseconds<float>>(scan_duration_).count() / scans_;
       view_duration_ms_ = duration_cast<milliseconds<float>>(view_duration_).count() / frames_;
       frames_duration_ = duration_cast<milliseconds<float>>(now - frames_timeout_ + interval);

@@ -112,8 +112,8 @@ public:
   {
     // Update mouse movement.
     std::tie(mx, my) = mouse2view(mx, my);
-    mc_.x = eye::vc.x + static_cast<int>(mx);
-    mc_.y = eye::vc.y + static_cast<int>(my);
+    mc_.x = eye::tc.x + static_cast<int>(mx);
+    mc_.y = eye::tc.y + static_cast<int>(my);
 
     // Acquire target.
     target_ = false;
@@ -364,7 +364,7 @@ public:
   reaper(boost::asio::any_io_executor executor, eye& eye, hid& hid) noexcept :
     base(executor, eye, hid)
   {
-    points_.reserve(std::max(eye::vw / 2, eye::vh / 2));
+    points_.reserve(std::max(eye::tw / 2, eye::th / 2));
   }
 
   const char* name() const noexcept override
@@ -376,11 +376,11 @@ public:
   {
     // Update mouse movement.
     std::tie(mx_, my_) = mouse2view(mx, my);
-    mc_.x = eye::vc.x + static_cast<int>(mx_ * 2.0f);
-    mc_.y = eye::vc.y + static_cast<int>(my_ * 2.0f);
+    mc_.x = eye::tc.x + static_cast<int>(mx_ * 2.0f);
+    mc_.y = eye::tc.y + static_cast<int>(my_ * 2.0f);
 
     // Create points between mouse movement and center of view.
-    connect_view_points(points_, mc_, eye::vc, 1);
+    connect_view_points(points_, mc_, eye::tc, 1);
 
     // Acquire target.
     for (const auto& target : eye_.targets()) {
@@ -428,7 +428,7 @@ public:
     eye_.draw_targets(overlay);
     eye_.draw(overlay, mc_, target_ ? 0xD50000FF : 0x00B0FFFF);
     std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mx_, my_);
-    eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
+    eye_.draw(overlay, { 2, eye::th - 40 }, info_);
     return false;
   }
 
@@ -540,7 +540,7 @@ public:
       const auto start = burst_start_.load(std::memory_order_acquire);
       const auto duration = duration_cast<milliseconds<float>>(clock::now() - start);
       std::format_to(std::back_inserter(info_), "{:08.3f} ms", duration.count());
-      eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
+      eye_.draw(overlay, { 2, eye::th - 40 }, info_);
     }
     return false;
   }

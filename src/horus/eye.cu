@@ -18,7 +18,7 @@ __global__ void mask_filter(uchar* data, size_t step, int r, int c)
   const auto d = r * 2 + 1;
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x < r || x >= eye::vw - r || y < r || y >= eye::vh - r) {
+  if (x < r || x >= eye::tw - r || y < r || y >= eye::th - r) {
     return;
   }
   const auto di = data + y * step + x;
@@ -45,11 +45,11 @@ __global__ void mask_shrink(uchar* data, size_t step, int r)
 {
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= eye::vw || y >= eye::vh) {
+  if (x >= eye::tw || y >= eye::th) {
     return;
   }
   const auto di = data + y * step + x;
-  if (x < r || x >= eye::vw - r || y < r || y >= eye::vh - r) {
+  if (x < r || x >= eye::tw - r || y < r || y >= eye::th - r) {
     *di = 0x00;
   }
 }
@@ -60,7 +60,7 @@ __global__ void mask_dilate(uchar* data, size_t step, int r)
   const auto d = r * 2 + 1;
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x < r || x >= eye::vw - r || y < r || y >= eye::vh - r) {
+  if (x < r || x >= eye::tw - r || y < r || y >= eye::th - r) {
     return;
   }
   const auto di = data + y * step + x;
@@ -87,7 +87,7 @@ __global__ void mask_erode(uchar* data, size_t step, int r)
   const auto d = r * 2 + 1;
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x < r || x >= eye::vw - r || y < r || y >= eye::vh - r) {
+  if (x < r || x >= eye::tw - r || y < r || y >= eye::th - r) {
     return;
   }
   const auto di = data + y * step + x;
@@ -113,7 +113,7 @@ __global__ void mask_scan(const uchar* data, size_t data_step, uchar* scan, size
 {
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= eye::vw || y >= eye::vh) {
+  if (x >= eye::tw || y >= eye::th) {
     return;
   }
   scan[y * scan_step + x] = data[y * data_step + x] & 0x01 ? 0x01 : 0x00;
@@ -133,7 +133,7 @@ __global__ void mask_draw(const uchar* data, size_t data_step, uchar* view, size
 {
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= eye::vw || y >= eye::vh) {
+  if (x >= eye::tw || y >= eye::th) {
     return;
   }
   // clang-format off
@@ -152,7 +152,7 @@ __global__ void mask_draw(const uchar* data, size_t data_step, uchar* view, size
 
 }  // namespace
 
-const cv::Point eye::vc{ vw / 2, vh / 2 };
+const cv::Point eye::tc{ tw / 2, th / 2 };
 
 eye::eye()
 {
@@ -168,7 +168,7 @@ bool eye::scan(const cv::Mat& scan) noexcept
   assert(scan.rows == sh);
 
   // Resize scan (120 μs).
-  cv::resize(scan, scan_, { vw, vh }, 1.0 / vf, 1.0 / vf, cv::INTER_AREA);
+  cv::resize(scan, scan_, { tw, th }, 1.0 / tf, 1.0 / tf, cv::INTER_AREA);
 
   // Update hash (30 μs).
   const auto hash = mulxp3_hash(scan_.data, scan_.step * scan_.rows, 0);
@@ -190,7 +190,7 @@ const std::vector<eye::target>& eye::targets() noexcept
   mask_data_.upload(scan_);
 
   const dim3 block(16, 16);
-  const dim3 grid(divUp(eye::vw, block.x), divUp(eye::vh, block.y));
+  const dim3 grid(divUp(eye::tw, block.x), divUp(eye::th, block.y));
   mask_filter<<<grid, block>>>(mask_data_.data, mask_data_.step, 3, 9);
   assert(cudaGetLastError() == cudaSuccess);
   mask_shrink<<<grid, block>>>(mask_data_.data, mask_data_.step, 3);
@@ -257,8 +257,8 @@ const std::vector<eye::target>& eye::targets() noexcept
 clock::duration eye::draw_mask(cv::Mat& overlay) noexcept
 {
   assert(overlay.type() == CV_8UC4);
-  assert(overlay.cols == vw);
-  assert(overlay.rows == vh);
+  assert(overlay.cols == tw);
+  assert(overlay.rows == th);
 
   if (!targets_ready_) {
     targets();
@@ -276,8 +276,8 @@ clock::duration eye::draw_mask(cv::Mat& overlay) noexcept
 clock::duration eye::draw_targets(cv::Mat& overlay) noexcept
 {
   assert(overlay.type() == CV_8UC4);
-  assert(overlay.cols == vw);
-  assert(overlay.rows == vh);
+  assert(overlay.cols == tw);
+  assert(overlay.rows == th);
 
   if (!targets_ready_) {
     targets();

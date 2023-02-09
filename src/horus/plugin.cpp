@@ -73,7 +73,7 @@ public:
     draw_effect_desaturate_ = gs_effect_get_param_by_name(draw_effect_, "desaturate");
     assert(draw_effect_desaturate_);
 
-    overlay_texture_ = gs_texture_create(eye::vw, eye::vh, GS_RGBA_UNORM, 1, nullptr, GS_DYNAMIC);
+    overlay_texture_ = gs_texture_create(eye::tw, eye::th, GS_RGBA_UNORM, 1, nullptr, GS_DYNAMIC);
     assert(overlay_texture_);
 
     screenshot_stagesurf_ = gs_stagesurface_create(eye::sw, eye::sh, GS_RGBA);
@@ -256,7 +256,7 @@ public:
     }
 
     // Draw info text.
-    eye_.draw(overlay_, { 2, eye::vh - 20 }, info_);
+    eye_.draw(overlay_, { 2, eye::th - 20 }, info_);
 
     // Set overlay texture image.
     gs_texture_set_image(overlay_texture_, overlay_.data, overlay_.step, false);
@@ -416,7 +416,7 @@ private:
   gs_eparam_t* draw_effect_overlay_{ nullptr };
   gs_eparam_t* draw_effect_desaturate_{ nullptr };
 
-  cv::Mat overlay_{ eye::vw, eye::vh, CV_8UC4 };
+  cv::Mat overlay_{ eye::tw, eye::th, CV_8UC4 };
   gs_texture_t* overlay_texture_{ nullptr };
   bool overlay_desaturate_{ false };
 

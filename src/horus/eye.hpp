@@ -35,6 +35,9 @@ public:
   static constexpr uint32_t vh{ sh / vf };
   static const cv::Point vc;
 
+  // Expected frames per second.
+  static constexpr float fps = 120.0f;
+
   // Set of points representing a polygon.
   using polygon = std::vector<cv::Point>;
 
@@ -53,8 +56,10 @@ public:
   /// Creates scan (150 μs).
   ///
   /// @param scan @ref eye::sw x @ref eye::sh image with bytes set to 0x00 or 0x01.
+  /// 
+  /// @return Returns true if the targets changed.
   ///
-  void scan(const cv::Mat& scan) noexcept;
+  bool scan(const cv::Mat& scan) noexcept;
 
   /// Creates targets (600 μs).
   ///

@@ -1,5 +1,5 @@
 # Horus
-OBS plugin for Overwatch enemy detection using OpenCV and CUDA in under one millisecond.
+OBS plugin for Overwatch enemy detection using OpenCV and CUDA in under 3 milliseconds.
 
 At 120 FPS, the total delay between mouse movement recognized by the system (DirectInput)
 and new enemy positions recognized by the plugin ranges between 0.6 and 13.6 ms.

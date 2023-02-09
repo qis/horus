@@ -171,9 +171,27 @@ public:
     }
 
     // Process scan.
-    eye_.scan({ eye::sw, eye::sh, CV_8UC1, data, step });
+    if (eye_.scan({ eye::sw, eye::sh, CV_8UC1, data, step })) {
+      scans_++;
+    }
+
+    // Get mouse movement.
+    const auto mt = mt_;
+    float mx = mx_.exchange(0);
+    float my = my_.exchange(0);
+    mt_ = clock::now();
+
+    // Calculate mouse movement until next frame.
+    constexpr milliseconds<float> fd{ 1000.0f / eye::fps };         // frame duration
+    const auto sd = duration_cast<milliseconds<float>>(mt_ - tp0);  // scan duration
+    const auto md = duration_cast<milliseconds<float>>(mt_ - mt);   // move duration
+    const auto mf = md / (fd > sd ? fd - sd : fd);                  // move factor
+    mx /= mf;
+    my /= mf;
+
+    // Process hero.
     if (const auto hero = hero_) {
-      hero->scan(mx_.exchange(0), my_.exchange(0));
+      hero->scan(mx, my);
     }
 
     // Get info time point.
@@ -273,7 +291,7 @@ public:
     const auto now = clock::now();
     if (now > frames_timeout_) {
       constexpr auto interval = 200ms;
-      scan_duration_ms_ = duration_cast<milliseconds<float>>(scan_duration_).count() / frames_;
+      scan_duration_ms_ = duration_cast<milliseconds<float>>(scan_duration_).count() / scans_;
       view_duration_ms_ = duration_cast<milliseconds<float>>(view_duration_).count() / frames_;
       frames_duration_ = duration_cast<milliseconds<float>>(now - frames_timeout_ + interval);
       frames_per_second_ = std::round(frames_ / (frames_duration_.count() / 1000.0f));
@@ -281,6 +299,7 @@ public:
       scan_duration_ = {};
       view_duration_ = {};
       frames_ = 0;
+      scans_ = 0;
     }
     frames_++;
   }
@@ -408,14 +427,16 @@ private:
   boost::asio::io_context context_{ 1 };
   hero::timer timer_{ context_ };
 
-  std::atomic_int mx_;
-  std::atomic_int my_;
+  std::atomic_int mx_{};
+  std::atomic_int my_{};
+  clock::time_point mt_{};
   view view_{ draw.load() };
   hid hid_{ context_.get_executor() };
   eye eye_;
 
   std::string info_;
 
+  std::size_t scans_{ 0 };
   std::size_t frames_{ 0 };
   clock::time_point frames_timeout_{ clock::now() + std::chrono::milliseconds{ 100 } };
   horus::milliseconds<float> frames_duration_{};

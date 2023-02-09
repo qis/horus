@@ -160,7 +160,7 @@ eye::eye()
   freetype_->loadFontData("C:/OBS/horus/res/fonts/PixelOperatorMono.ttf", 0);
 }
 
-void eye::scan(const cv::Mat& scan) noexcept
+bool eye::scan(const cv::Mat& scan) noexcept
 {
   // Verify scan type and size.
   assert(scan.type() == CV_8UC1);
@@ -172,10 +172,12 @@ void eye::scan(const cv::Mat& scan) noexcept
 
   // Update hash (30 μs).
   const auto hash = mulxp3_hash(scan_.data, scan_.step * scan_.rows, 0);
-  if (hash != hash_) {
-    targets_ready_ = false;
-    hash_ = hash;
+  if (hash == hash_) {
+    return false;
   }
+  hash_ = hash;
+  targets_ready_ = false;
+  return true;
 }
 
 const std::vector<eye::target>& eye::targets() noexcept

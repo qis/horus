@@ -7,7 +7,7 @@ namespace {
 
 constexpr auto mf = 0.0442846f;
 
-__forceinline std::pair<float, float> mouse2view(int mx, int my) noexcept
+__forceinline std::pair<float, float> mouse2view(float mx, float my) noexcept
 {
   return { mx * mf, my * mf };
 }
@@ -108,17 +108,17 @@ public:
     return "ana";
   }
 
-  void scan(int mx, int my) noexcept override
+  void scan(float mx, float my) noexcept override
   {
     // Update mouse movement.
-    std::tie(mx_, my_) = mouse2view(mx, my);
-    md_.x = mx_;
-    md_.y = my_;
+    std::tie(mx, my) = mouse2view(mx, my);
+    mc_.x = eye::vc.x + static_cast<int>(mx);
+    mc_.y = eye::vc.y + static_cast<int>(my);
 
     // Acquire target.
     target_ = false;
     for (const auto& target : eye_.targets()) {
-      if (cv::pointPolygonTest(target.hull, eye::vc + md_, true) > 1.0) {
+      if (cv::pointPolygonTest(target.hull, mc_, true) > 1.0) {
         target_ = true;
         break;
       }
@@ -143,9 +143,7 @@ public:
   }
 
 private:
-  float mx_{};
-  float my_{};
-  cv::Point md_{};
+  cv::Point mc_{};
   bool target_{ false };
   clock::time_point lockout_{};
 };
@@ -374,15 +372,15 @@ public:
     return "reaper";
   }
 
-  void scan(int mx, int my) noexcept override
+  void scan(float mx, float my) noexcept override
   {
     // Update mouse movement.
     std::tie(mx_, my_) = mouse2view(mx, my);
-    md_.x = mx_ * 2;
-    md_.y = my_ * 2;
+    mc_.x = eye::vc.x + static_cast<int>(mx_ * 2.0f);
+    mc_.y = eye::vc.y + static_cast<int>(my_ * 2.0f);
 
     // Create points between mouse movement and center of view.
-    connect_view_points(points_, eye::vc + md_, eye::vc, 1);
+    connect_view_points(points_, mc_, eye::vc, 1);
 
     // Acquire target.
     for (const auto& target : eye_.targets()) {
@@ -428,7 +426,7 @@ public:
   {
     info_.clear();
     eye_.draw_targets(overlay);
-    eye_.draw(overlay, eye::vc + md_, target_ ? 0xD50000FF : 0x00B0FFFF);
+    eye_.draw(overlay, mc_, target_ ? 0xD50000FF : 0x00B0FFFF);
     std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mx_, my_);
     eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
     return false;
@@ -446,7 +444,7 @@ private:
   std::string info_;
   float mx_{};
   float my_{};
-  cv::Point md_{};
+  cv::Point mc_{};
   std::vector<cv::Point> points_;
   bool target_{ false };
   clock::time_point lockout_{};

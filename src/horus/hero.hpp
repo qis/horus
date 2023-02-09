@@ -28,7 +28,7 @@ public:
 
   virtual const char* name() const noexcept = 0;
 
-  virtual void scan(int mx, int my) noexcept {}
+  virtual void scan(float mx, float my) noexcept {}
 
   virtual bool draw(cv::Mat& overlay) noexcept
   {

@@ -25,13 +25,13 @@ Detecting this solution without limiting the use of legitimate software like OBS
 harder and nobody has done this yet.
 
 ## How
-Here is a short summary of what this plugin does.
+**Here is a short summary of what this plugin does.**
 
 Registers itself as a filter plygin in OBS and receives captured frames from it.
 
 ![Frame](res/images/01-frame.png "Frame")
 
-Converts each frame to the HSV colorspace
+Converts each frame to the HSV colorspace.
 
 ![HSV](res/images/02-hsv.png "HSV")
 

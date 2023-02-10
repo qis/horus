@@ -223,6 +223,9 @@ const std::vector<eye::target>& eye::targets() noexcept
     targets_[i].contours = { &contours_[i] };
   }
 
+  const auto tp3 = clock::now();
+  hulls_duration_ = tp3 - tp2;
+
   while (true) {
     for (auto si = targets_.begin(), se = targets_.end(); si != se; ++si) {
       const auto srect = cv::boundingRect(si->hull);
@@ -256,8 +259,8 @@ const std::vector<eye::target>& eye::targets() noexcept
     continue;
   }
 
-  const auto tp3 = clock::now();
-  hulls_duration_ = tp3 - tp2;
+  const auto tp4 = clock::now();
+  groups_duration_ = tp4 - tp3;
 
   targets_ready_ = true;
   return targets_;

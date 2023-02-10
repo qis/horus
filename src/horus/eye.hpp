@@ -29,22 +29,17 @@ public:
   static constexpr uint32_t sx{ (dw - sw) / 2 };
   static constexpr uint32_t sy{ (dh - sh) / 2 };
 
-  // Targets plane factor and size.
-  static constexpr uint32_t tf{ 2 };
-  static constexpr uint32_t tw{ sw / tf };
-  static constexpr uint32_t th{ sh / tf };
-  static const cv::Point tc;
+  // View plane factor and size.
+  static constexpr uint32_t vf{ 2 };
+  static constexpr uint32_t vw{ sw / vf };
+  static constexpr uint32_t vh{ sh / vf };
+  static const cv::Point vc;
 
   // Expected frames per second.
   static constexpr float fps = 120.0f;
 
   // Set of points representing a polygon.
   using polygon = std::vector<cv::Point>;
-
-  struct target {
-    polygon hull;
-    std::vector<polygon*> contours;
-  };
 
   eye();
   eye(eye&& other) = delete;
@@ -57,17 +52,17 @@ public:
   ///
   /// @param scan @ref eye::sw x @ref eye::sh image with bytes set to 0x00 or 0x01.
   ///
-  /// @return Returns true if the targets changed.
+  /// @return Returns true if the hulls have changed.
   ///
   bool scan(const cv::Mat& scan) noexcept;
 
-  /// Creates targets (600 μs).
+  /// Creates hulls (600 μs).
   ///
   /// Uses scan provided by the previous @ref eye::scan call.
   ///
-  /// @return Returns generated targets on a @ref eye::tw x @ref eye::th plane.
+  /// @return Returns generated hulls on a @ref eye::vw x @ref eye::vh plane.
   ///
-  const std::vector<target>& targets() noexcept;
+  const std::vector<polygon>& hulls() noexcept;
 
   clock::duration draw_scan(cv::Mat& overlay) noexcept;
   clock::duration draw_mask(cv::Mat& overlay) noexcept;
@@ -105,13 +100,13 @@ private:
     return cv::getStructuringElement(shape, cv::Point(x, y));
   }
 
-  cv::Mat scan_{ tw, th, CV_8UC1 };
+  cv::Mat scan_{ vw, vh, CV_8UC1 };
   std::uint64_t scan_hash_{ 0x00 };
   clock::duration scan_duration_{};
 
-  cv::Mat mask_{ tw, th, CV_8UC1 };
-  cv::cuda::GpuMat mask_data_{ tw, th, CV_8UC1 };
-  cv::cuda::GpuMat mask_view_{ tw, th, CV_8UC1 };
+  cv::Mat mask_{ vw, vh, CV_8UC1 };
+  cv::cuda::GpuMat mask_data_{ vw, vh, CV_8UC1 };
+  cv::cuda::GpuMat mask_view_{ vw, vh, CV_8UC1 };
   clock::duration mask_duration_{};
 
   std::vector<polygon> contours_;
@@ -119,11 +114,11 @@ private:
   clock::duration groups_duration_{};
   clock::duration hulls_duration_{};
 
-  std::vector<target> targets_;
-  bool targets_ready_{ false };
+  std::vector<polygon> hulls_;
+  bool hulls_ready_{ false };
 
   std::vector<cv::Vec4i> hierarchy_;
-  cv::cuda::GpuMat view_{ tw, th, CV_8UC4 };
+  cv::cuda::GpuMat view_{ vw, vh, CV_8UC4 };
   cv::Ptr<cv::freetype::FreeType2> freetype_;
 };
 

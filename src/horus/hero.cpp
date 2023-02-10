@@ -139,13 +139,13 @@ public:
   {
     // Update mouse movement.
     std::tie(mx, my) = mouse2view(mx, my);
-    mc_.x = eye::tc.x + static_cast<int>(mx);
-    mc_.y = eye::tc.y + static_cast<int>(my);
+    mc_.x = eye::vc.x + static_cast<int>(mx);
+    mc_.y = eye::vc.y + static_cast<int>(my);
 
     // Acquire target.
     target_ = false;
-    for (const auto& target : eye_.targets()) {
-      if (cv::pointPolygonTest(target.hull, mc_, true) > 1.0) {
+    for (const auto& hull : eye_.hulls()) {
+      if (cv::pointPolygonTest(hull, mc_, true) > 1.0) {
         target_ = true;
         break;
       }
@@ -394,7 +394,7 @@ public:
   reaper(boost::asio::any_io_executor executor, eye& eye, hid& hid) noexcept :
     base(executor, eye, hid)
   {
-    points_.reserve(std::max(eye::tw / 2, eye::th / 2));
+    points_.reserve(std::max(eye::vw / 2, eye::vh / 2));
   }
 
   const char* name() const noexcept override
@@ -406,20 +406,20 @@ public:
   {
     // Update mouse movement.
     std::tie(mx_, my_) = mouse2view(mx, my);
-    mc_.x = eye::tc.x + static_cast<int>(mx_ * prediction_multiplier);
-    mc_.y = eye::tc.y + static_cast<int>(my_ * prediction_multiplier);
+    mc_.x = eye::vc.x + static_cast<int>(mx_ * prediction_multiplier);
+    mc_.y = eye::vc.y + static_cast<int>(my_ * prediction_multiplier);
 
     // Create points between mouse movement and center of view.
-    connect_view_points(points_, mc_, eye::tc, 1);
+    connect_view_points(points_, mc_, eye::vc, 1);
 
     // Acquire target.
     target_ = true;
-    for (const auto& target : eye_.targets()) {
+    for (const auto& hull : eye_.hulls()) {
       for (const auto& point : points_) {
-        if (cv::pointPolygonTest(target.hull, point, false) > 0.0) {
+        if (cv::pointPolygonTest(hull, point, false) > 0.0) {
           goto acquired;
         }
-        if (cv::norm(centroid(target.hull, spread) - mc_) < spread / 2.0) {
+        if (cv::norm(centroid(hull, spread) - mc_) < spread / 2.0) {
           goto acquired;
         }
       }
@@ -466,7 +466,7 @@ public:
     //}
     eye_.draw(overlay, mc_, target_ ? 0xD50000FF : 0x00B0FFFF);
     std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mx_, my_);
-    eye_.draw(overlay, { 2, eye::th - 40 }, info_);
+    eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
     return false;
   }
 
@@ -479,13 +479,13 @@ public:
   }
 
 private:
-  std::string info_;
   float mx_{};
   float my_{};
   cv::Point mc_{};
-  std::vector<cv::Point> points_;
   bool target_{ false };
+  std::vector<cv::Point> points_;
   clock::time_point lockout_{};
+  std::string info_;
 };
 
 class soldier : public base {
@@ -578,7 +578,7 @@ public:
       const auto start = burst_start_.load(std::memory_order_acquire);
       const auto duration = duration_cast<milliseconds<float>>(clock::now() - start);
       std::format_to(std::back_inserter(info_), "{:08.3f} ms", duration.count());
-      eye_.draw(overlay, { 2, eye::th - 40 }, info_);
+      eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
     }
     return false;
   }

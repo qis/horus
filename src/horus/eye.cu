@@ -18,7 +18,7 @@ __global__ void mask_filter(uchar* data, size_t step, int r, int c)
   const auto d = r * 2 + 1;
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x < r || x >= eye::tw - r || y < r || y >= eye::th - r) {
+  if (x < r || x >= eye::vw - r || y < r || y >= eye::vh - r) {
     return;
   }
   const auto di = data + y * step + x;
@@ -45,11 +45,11 @@ __global__ void mask_shrink(uchar* data, size_t step, int r)
 {
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= eye::tw || y >= eye::th) {
+  if (x >= eye::vw || y >= eye::vh) {
     return;
   }
   const auto di = data + y * step + x;
-  if (x < r || x >= eye::tw - r || y < r || y >= eye::th - r) {
+  if (x < r || x >= eye::vw - r || y < r || y >= eye::vh - r) {
     *di = 0x00;
   }
 }
@@ -60,7 +60,7 @@ __global__ void mask_dilate(uchar* data, size_t step, int r)
   const auto d = r * 2 + 1;
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x < r || x >= eye::tw - r || y < r || y >= eye::th - r) {
+  if (x < r || x >= eye::vw - r || y < r || y >= eye::vh - r) {
     return;
   }
   const auto di = data + y * step + x;
@@ -87,7 +87,7 @@ __global__ void mask_erode(uchar* data, size_t step, int r)
   const auto d = r * 2 + 1;
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x < r || x >= eye::tw - r || y < r || y >= eye::th - r) {
+  if (x < r || x >= eye::vw - r || y < r || y >= eye::vh - r) {
     return;
   }
   const auto di = data + y * step + x;
@@ -113,7 +113,7 @@ __global__ void mask_scan(const uchar* data, size_t data_step, uchar* scan, size
 {
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= eye::tw || y >= eye::th) {
+  if (x >= eye::vw || y >= eye::vh) {
     return;
   }
   scan[y * scan_step + x] = data[y * data_step + x] & 0x01 ? 0x01 : 0x00;
@@ -133,7 +133,7 @@ __global__ void mask_draw(const uchar* data, size_t data_step, uchar* view, size
 {
   const auto x = blockIdx.x * blockDim.x + threadIdx.x;
   const auto y = blockIdx.y * blockDim.y + threadIdx.y;
-  if (x >= eye::tw || y >= eye::th) {
+  if (x >= eye::vw || y >= eye::vh) {
     return;
   }
   // clang-format off
@@ -152,7 +152,7 @@ __global__ void mask_draw(const uchar* data, size_t data_step, uchar* view, size
 
 }  // namespace
 
-const cv::Point eye::tc{ tw / 2, th / 2 };
+const cv::Point eye::vc{ vw / 2, vh / 2 };
 
 eye::eye()
 {
@@ -173,30 +173,31 @@ bool eye::scan(const cv::Mat& scan) noexcept
   const auto tp0 = clock::now();
 
   // Resize scan (120 μs).
-  cv::resize(scan, scan_, { tw, th }, 1.0 / tf, 1.0 / tf, cv::INTER_AREA);
+  cv::resize(scan, scan_, { vw, vh }, 1.0 / vf, 1.0 / vf, cv::INTER_AREA);
 
   // Update hash (30 μs).
   const auto scan_hash = mulxp3_hash(scan_.data, scan_.step * scan_.rows, 0);
   if (scan_hash == scan_hash_) {
     return false;
   }
-  scan_hash_ = scan_hash;
-  targets_ready_ = false;
   scan_duration_ = clock::now() - tp0;
+  scan_hash_ = scan_hash;
+  hulls_ready_ = false;
   return true;
 }
 
-const std::vector<eye::target>& eye::targets() noexcept
+const std::vector<eye::polygon>& eye::hulls() noexcept
 {
-  if (targets_ready_) {
-    return targets_;
+  if (hulls_ready_) {
+    return hulls_;
   }
   const auto tp0 = clock::now();
 
   mask_data_.upload(scan_);
 
   const dim3 block(16, 16);
-  const dim3 grid(divUp(eye::tw, block.x), divUp(eye::th, block.y));
+  const dim3 grid(divUp(eye::vw, block.x), divUp(eye::vh, block.y));
+#ifndef __INTELLISENSE__
   mask_filter<<<grid, block>>>(mask_data_.data, mask_data_.step, 3, 9);
   assert(cudaGetLastError() == cudaSuccess);
   mask_shrink<<<grid, block>>>(mask_data_.data, mask_data_.step, 3);
@@ -209,6 +210,7 @@ const std::vector<eye::target>& eye::targets() noexcept
   }
   mask_scan<<<grid, block>>>(mask_data_.data, mask_data_.step, mask_view_.data, mask_view_.step);
   assert(cudaGetLastError() == cudaSuccess);
+#endif
   mask_view_.download(mask_);
 
   const auto tp1 = clock::now();
@@ -219,24 +221,24 @@ const std::vector<eye::target>& eye::targets() noexcept
   const auto tp2 = clock::now();
   contours_duration_ = tp2 - tp1;
 
-  targets_.resize(contours_.size());
+  hulls_.resize(contours_.size());
   for (std::size_t i = 0, size = contours_.size(); i < size; i++) {
-    cv::convexHull(contours_[i], targets_[i].hull);
-    targets_[i].contours = { &contours_[i] };
+    cv::convexHull(contours_[i], hulls_[i]);
   }
 
   const auto tp3 = clock::now();
   hulls_duration_ = tp3 - tp2;
 
   while (true) {
-    for (auto si = targets_.begin(), se = targets_.end(); si != se; ++si) {
-      const auto srect = cv::boundingRect(si->hull);
+    const auto se = hulls_.end();
+    for (auto si = hulls_.begin(); si != se; ++si) {
+      const auto srect = cv::boundingRect(*si);
       const auto sl = srect.x;
       const auto sr = srect.x + srect.width;
       const auto st = srect.y;
       const auto sb = srect.y + srect.height;
       for (auto di = std::next(si); di != se; ++di) {
-        const auto drect = cv::boundingRect(di->hull);
+        const auto drect = cv::boundingRect(*di);
         const auto dl = drect.x;
         const auto dr = drect.x + drect.width;
         const auto dt = drect.y;
@@ -244,15 +246,10 @@ const std::vector<eye::target>& eye::targets() noexcept
         if (sr < dl - 8 || sl > dr + 8 || sb < dt - 32 || st > db + 32) {
           continue;
         }
-
-        si->hull.reserve(si->hull.size() + di->hull.size());
-        si->hull.insert(si->hull.end(), di->hull.begin(), di->hull.end());
-        cv::convexHull(si->hull, di->hull);
-
-        di->contours.reserve(di->contours.size() + si->contours.size());
-        di->contours.insert(di->contours.end(), si->contours.begin(), si->contours.end());
-
-        targets_.erase(si);
+        si->reserve(si->size() + di->size());
+        si->insert(si->end(), di->begin(), di->end());
+        cv::convexHull(*si, *di);
+        hulls_.erase(si);
         goto joined;
       }
     }
@@ -264,15 +261,15 @@ const std::vector<eye::target>& eye::targets() noexcept
   const auto tp4 = clock::now();
   groups_duration_ = tp4 - tp3;
 
-  targets_ready_ = true;
-  return targets_;
+  hulls_ready_ = true;
+  return hulls_;
 }
 
 clock::duration eye::draw_scan(cv::Mat& overlay) noexcept
 {
   assert(overlay.type() == CV_8UC4);
-  assert(overlay.cols == tw);
-  assert(overlay.rows == th);
+  assert(overlay.cols == vw);
+  assert(overlay.rows == vh);
 
   overlay.setTo(scalar(0x64DD17FF), scan_);
 
@@ -282,17 +279,19 @@ clock::duration eye::draw_scan(cv::Mat& overlay) noexcept
 clock::duration eye::draw_mask(cv::Mat& overlay) noexcept
 {
   assert(overlay.type() == CV_8UC4);
-  assert(overlay.cols == tw);
-  assert(overlay.rows == th);
+  assert(overlay.cols == vw);
+  assert(overlay.rows == vh);
 
-  if (!targets_ready_) {
-    targets();
+  if (!hulls_ready_) {
+    hulls();
   }
 
   const dim3 block(16, 16);
   const dim3 grid(divUp(sw, block.x), divUp(sh, block.y));
+#ifndef __INTELLISENSE__
   mask_draw<<<grid, block>>>(mask_data_.data, mask_data_.step, view_.data, view_.step);
   assert(cudaGetLastError() == cudaSuccess);
+#endif
   view_.download(overlay);
 
   return mask_duration_;
@@ -301,11 +300,11 @@ clock::duration eye::draw_mask(cv::Mat& overlay) noexcept
 clock::duration eye::draw_contours(cv::Mat& overlay) noexcept
 {
   assert(overlay.type() == CV_8UC4);
-  assert(overlay.cols == tw);
-  assert(overlay.rows == th);
+  assert(overlay.cols == vw);
+  assert(overlay.rows == vh);
 
-  if (!targets_ready_) {
-    targets();
+  if (!hulls_ready_) {
+    hulls();
   }
 
   overlay.setTo(scalar(0x64DD17FF), mask_);
@@ -317,8 +316,8 @@ clock::duration eye::draw_groups(cv::Mat& overlay) noexcept
 {
   draw_contours(overlay);
 
-  for (const auto& target : targets_) {
-    cv::rectangle(overlay, cv::boundingRect(target.hull), scalar(0x00B0FFFF), 1, cv::LINE_8);
+  for (const auto& hull : hulls_) {
+    cv::rectangle(overlay, cv::boundingRect(hull), scalar(0x00B0FFFF), 1, cv::LINE_8);
   }
 
   return groups_duration_;
@@ -327,16 +326,16 @@ clock::duration eye::draw_groups(cv::Mat& overlay) noexcept
 clock::duration eye::draw_hulls(cv::Mat& overlay) noexcept
 {
   assert(overlay.type() == CV_8UC4);
-  assert(overlay.cols == tw);
-  assert(overlay.rows == th);
+  assert(overlay.cols == vw);
+  assert(overlay.rows == vh);
 
-  if (!targets_ready_) {
-    targets();
+  if (!hulls_ready_) {
+    hulls();
   }
 
-  for (const auto& target : targets_) {
-    cv::fillPoly(overlay, target.hull, scalar(0x64DD1760), cv::LINE_4);
-    cv::polylines(overlay, target.hull, true, scalar(0x64DD17FF), 1, cv::LINE_4);
+  for (const auto& hull : hulls_) {
+    cv::fillPoly(overlay, hull, scalar(0x64DD1760), cv::LINE_4);
+    cv::polylines(overlay, hull, true, scalar(0x64DD17FF), 1, cv::LINE_4);
   }
 
   return hulls_duration_;

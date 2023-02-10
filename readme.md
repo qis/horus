@@ -27,7 +27,7 @@ harder and nobody has done this yet.
 ## How
 **Here is a short summary of what this plugin does.**
 
-Registers itself as a filter plygin in OBS and receives captured frames from it.
+Registers itself as a filter plygin in OBS and receives captured frames.
 
 ![Frame](res/images/01-frame.png "Frame")
 

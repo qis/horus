@@ -27,23 +27,35 @@ harder and nobody has done this yet.
 ## How
 Here is a short summary of what this plugin does.
 
-* Registers itself as a filter plygin in OBS and receives captured frames from it.
+Registers itself as a filter plygin in OBS and receives captured frames from it.
 
-![Scan](res/images/scan.png "Scan")
+![Frame](res/images/01-frame.png "Frame")
 
-* Converts each frame to the HSV colorspace and searches for colors that match enemy outlines.
-* Copies detected enemy outline colors as a grayscale image to system memory.
-* Uses CUDA to mask and remove pixels that are likely player names, special effects, etc.
+Converts each frame to the HSV colorspace
 
-![Mask](res/images/mask.png "Mask")
+![HSV](res/images/02-hsv.png "HSV")
 
-* Uses OpenCV to detect the remaining outlines as contours.
-* Groups contours that likely belong to the same target.
-* Creates convex hulls as target representations.
+Searches for colors that match enemy outlines and copies the data to system memory.
 
-![Target](res/images/target.png "Target")
+![Scan](res/images/03-scan.png "Scan")
 
-* Simulates mouse clicks when a target is under the cursor (with prediction).
+Uses CUDA to mask and remove pixels that are likely player names, special effects, etc.
+
+![Mask](res/images/04-mask.png "Mask")
+
+Uses OpenCV to detect the remaining outlines as contours.
+
+![Contours](res/images/05-contours.png "Contours")
+
+Groups contours that likely belong to the same target.
+
+![Groups](res/images/06-groups.png "Groups")
+
+Creates convex hulls as target representations.
+
+![Hulls](res/images/07-hulls.png "Hulls")
+
+Simulates mouse clicks when a target is under the cursor (with prediction).
 
 ## Next
 This is a simple demo and many things can be improved. The following features will be added

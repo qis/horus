@@ -2,6 +2,7 @@ uniform float4x4 ViewProj;
 uniform texture2d image;
 uniform texture2d overlay;
 uniform bool desaturate = false;
+uniform bool hsv = false;
 
 sampler_state textureSampler {
   Filter   = MIN_MAG_MIP_POINT;
@@ -48,6 +49,29 @@ VertDataOut VSDefault(VertDataIn vi) {
 
 float4 PSColorMask(VertDataOut vi) : TARGET {
   float4 dst = image.Sample(textureSampler, vi.dst);
+  if (hsv) {
+    const float min = dst.r < dst.g ? (dst.r < dst.b ? dst.r : dst.b) : (dst.g < dst.b ? dst.g : dst.b);
+    const float max = dst.r > dst.g ? (dst.r > dst.b ? dst.r : dst.b) : (dst.g > dst.b ? dst.g : dst.b);
+    float h = 0;          // 0 - 360°
+    float s = 0;          // 0 - 100%
+    float v = max * 100;  // 0 - 100%
+    if (max > 0 && max - min > 0) {
+      s = (max - min) / max * 100;
+      if (max == dst.r) {
+        h = 60 * ((dst.g - dst.b) / (max - min));
+      } else if (max == dst.g) {
+        h = 60 * ((dst.b - dst.r) / (max - min)) + 120;
+      } else {
+        h = 60 * ((dst.r - dst.g) / (max - min)) + 240;
+      }
+    }
+    if (h < 0) {
+      h += 360;
+    }
+    dst.r = h / 510;
+    dst.g = s / 100;
+    dst.b = v / 100;
+  }
   if (desaturate) {
     const float c = dst.r * 0.299 + dst.g * 0.587 + dst.b * 0.114;
     dst.r = c;

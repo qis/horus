@@ -167,6 +167,9 @@ bool eye::scan(const cv::Mat& scan) noexcept
   assert(scan.cols == sw);
   assert(scan.rows == sh);
 
+  // Measure scan duration.
+  const auto tp0 = clock::now();
+
   // Resize scan (120 μs).
   cv::resize(scan, scan_, { tw, th }, 1.0 / tf, 1.0 / tf, cv::INTER_AREA);
 
@@ -177,6 +180,7 @@ bool eye::scan(const cv::Mat& scan) noexcept
   }
   hash_ = hash;
   targets_ready_ = false;
+  scan_duration_ = clock::now() - tp0;
   return true;
 }
 
@@ -208,12 +212,15 @@ const std::vector<eye::target>& eye::targets() noexcept
   const auto tp1 = clock::now();
   mask_duration_ = tp1 - tp0;
 
-  cv::findContours(mask_, targets_contours_, hierarchy_, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+  cv::findContours(mask_, contours_, hierarchy_, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
-  targets_.resize(targets_contours_.size());
-  for (std::size_t i = 0, size = targets_contours_.size(); i < size; i++) {
-    cv::convexHull(targets_contours_[i], targets_[i].hull);
-    targets_[i].contours = { &targets_contours_[i] };
+  const auto tp2 = clock::now();
+  contours_duration_ = tp2 - tp1;
+
+  targets_.resize(contours_.size());
+  for (std::size_t i = 0, size = contours_.size(); i < size; i++) {
+    cv::convexHull(contours_[i], targets_[i].hull);
+    targets_[i].contours = { &contours_[i] };
   }
 
   while (true) {
@@ -249,9 +256,22 @@ const std::vector<eye::target>& eye::targets() noexcept
     continue;
   }
 
-  targets_duration_ = clock::now() - tp1;
+  const auto tp3 = clock::now();
+  hulls_duration_ = tp3 - tp2;
+
   targets_ready_ = true;
   return targets_;
+}
+
+clock::duration eye::draw_scan(cv::Mat& overlay) noexcept
+{
+  assert(overlay.type() == CV_8UC4);
+  assert(overlay.cols == tw);
+  assert(overlay.rows == th);
+
+  overlay.setTo(scalar(0x64DD17FF), scan_);
+
+  return scan_duration_;
 }
 
 clock::duration eye::draw_mask(cv::Mat& overlay) noexcept
@@ -273,7 +293,33 @@ clock::duration eye::draw_mask(cv::Mat& overlay) noexcept
   return mask_duration_;
 }
 
-clock::duration eye::draw_targets(cv::Mat& overlay) noexcept
+clock::duration eye::draw_contours(cv::Mat& overlay) noexcept
+{
+  assert(overlay.type() == CV_8UC4);
+  assert(overlay.cols == tw);
+  assert(overlay.rows == th);
+
+  if (!targets_ready_) {
+    targets();
+  }
+
+  overlay.setTo(scalar(0x64DD17FF), mask_);
+
+  return contours_duration_;
+}
+
+clock::duration eye::draw_groups(cv::Mat& overlay) noexcept
+{
+  draw_contours(overlay);
+
+  for (const auto& target : targets_) {
+    cv::rectangle(overlay, cv::boundingRect(target.hull), scalar(0x00B0FFFF), 1, cv::LINE_8);
+  }
+
+  return groups_duration_;
+}
+
+clock::duration eye::draw_hulls(cv::Mat& overlay) noexcept
 {
   assert(overlay.type() == CV_8UC4);
   assert(overlay.cols == tw);
@@ -286,10 +332,9 @@ clock::duration eye::draw_targets(cv::Mat& overlay) noexcept
   for (const auto& target : targets_) {
     cv::fillPoly(overlay, target.hull, scalar(0x64DD1760), cv::LINE_4);
     cv::polylines(overlay, target.hull, true, scalar(0x64DD17FF), 1, cv::LINE_4);
-    cv::rectangle(overlay, cv::boundingRect(target.hull), scalar(0x00B0FFFF), 1, cv::LINE_8);
   }
 
-  return targets_duration_;
+  return hulls_duration_;
 }
 
 void eye::draw(

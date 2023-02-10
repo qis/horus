@@ -33,8 +33,12 @@ namespace horus {
 class plugin {
 public:
   enum class view {
-    mask = 0,
-    targets,
+    hsv = 0,
+    scan,
+    mask,
+    contours,
+    groups,
+    hulls,
     hero,
     none,
   };
@@ -74,6 +78,9 @@ public:
 
     draw_effect_desaturate_ = gs_effect_get_param_by_name(draw_effect_, "desaturate");
     assert(draw_effect_desaturate_);
+
+    draw_effect_hsv_ = gs_effect_get_param_by_name(draw_effect_, "hsv");
+    assert(draw_effect_hsv_);
 
     overlay_texture_ = gs_texture_create(eye::tw, eye::th, GS_RGBA_UNORM, 1, nullptr, GS_DYNAMIC);
     assert(overlay_texture_);
@@ -198,14 +205,14 @@ public:
     // Get info time point.
     const auto tp1 = clock::now();
 
+    // Unmap scan texture.
+    gs_stagesurface_unmap(scan_stagesurf_);
+
     // Update scan counter.
     if (scan) {
       scan_duration_ += tp1 - tp0;
       scans_++;
     }
-
-    // Unmap scan texture.
-    gs_stagesurface_unmap(scan_stagesurf_);
 
     // Clear info.
     info_.clear();
@@ -226,17 +233,39 @@ public:
     }
 
     // Draw overlay.
+    overlay_hsv_ = false;
     overlay_desaturate_ = false;
     const auto view_setting = draw.load(std::memory_order_acquire);
     switch (view_setting) {
-    case view::mask:
-      info_.append(" | mask");
-      view_duration_ += eye_.draw_mask(overlay_);
+    case view::hsv:
+      info_.append(" | hsv");
+      overlay_hsv_ = true;
       break;
-    case view::targets:
-      info_.append(" | targets");
-      view_duration_ += eye_.draw_targets(overlay_);
-      break;
+    case view::scan: {
+      const auto ms = duration_cast<milliseconds<float>>(eye_.draw_scan(overlay_));
+      std::format_to(std::back_inserter(info_), " | scan ({:5.3f} ms)", ms.count());
+      overlay_desaturate_ = true;
+    } break;
+    case view::mask: {
+      const auto ms = duration_cast<milliseconds<float>>(eye_.draw_mask(overlay_));
+      std::format_to(std::back_inserter(info_), " | mask ({:5.3f} ms)", ms.count());
+      overlay_desaturate_ = true;
+    } break;
+    case view::contours: {
+      const auto ms = duration_cast<milliseconds<float>>(eye_.draw_contours(overlay_));
+      std::format_to(std::back_inserter(info_), " | contours ({:5.3f} ms)", ms.count());
+      overlay_desaturate_ = true;
+    } break;
+    case view::groups: {
+      const auto ms = duration_cast<milliseconds<float>>(eye_.draw_groups(overlay_));
+      std::format_to(std::back_inserter(info_), " | groups ({:5.3f} ms)", ms.count());
+      overlay_desaturate_ = true;
+    } break;
+    case view::hulls: {
+      const auto ms = duration_cast<milliseconds<float>>(eye_.draw_hulls(overlay_));
+      std::format_to(std::back_inserter(info_), " | hulls ({:5.3f} ms)", ms.count());
+      overlay_desaturate_ = true;
+    } break;
     case view::hero:
       info_.append(" | hero");
       if (const auto hero = hero_) {
@@ -245,10 +274,6 @@ public:
       break;
     case view::none:
       break;
-    }
-    if (view_setting != view::none && view_setting != view::hero) {
-      std::format_to(std::back_inserter(info_), " ({:5.3f} ms)", view_duration_ms_);
-      overlay_desaturate_ = true;
     }
 
     // Draw input delay.
@@ -269,6 +294,9 @@ public:
     gs_texture_set_image(overlay_texture_, overlay_.data, overlay_.step, false);
 
     // Draw overlay texture.
+    if (overlay_hsv_) {
+      gs_effect_set_bool(draw_effect_hsv_, true);
+    }
     if (overlay_desaturate_) {
       gs_effect_set_bool(draw_effect_desaturate_, true);
     }
@@ -296,12 +324,10 @@ public:
     // Update frame counter.
     if (const auto now = clock::now(); now > frames_timeout_) {
       scan_duration_ms_ = duration_cast<milliseconds<float>>(scan_duration_).count() / scans_;
-      view_duration_ms_ = duration_cast<milliseconds<float>>(view_duration_).count() / frames_;
       frames_duration_ = duration_cast<milliseconds<float>>(now - frames_timeout_ + interval);
       frames_per_second_ = std::round(frames_ / (frames_duration_.count() / 1000.0f));
       frames_timeout_ = now + interval;
       scan_duration_ = {};
-      view_duration_ = {};
       frames_ = 0;
       scans_ = 0;
     }
@@ -419,10 +445,12 @@ private:
   gs_effect_t* draw_effect_{ nullptr };
   gs_eparam_t* draw_effect_overlay_{ nullptr };
   gs_eparam_t* draw_effect_desaturate_{ nullptr };
+  gs_eparam_t* draw_effect_hsv_{ nullptr };
 
   cv::Mat overlay_{ eye::tw, eye::th, CV_8UC4 };
   gs_texture_t* overlay_texture_{ nullptr };
   bool overlay_desaturate_{ false };
+  bool overlay_hsv_{ false };
 
   std::shared_ptr<hero::base> hero_;
   sound hero_sound_;
@@ -448,9 +476,6 @@ private:
 
   clock::duration scan_duration_{};
   float scan_duration_ms_{};
-
-  clock::duration view_duration_{};
-  float view_duration_ms_{};
 
   std::atomic_bool input_{ false };
   std::atomic<clock::time_point> input_start_;

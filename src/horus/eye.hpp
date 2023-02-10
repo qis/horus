@@ -69,8 +69,11 @@ public:
   ///
   const std::vector<target>& targets() noexcept;
 
+  clock::duration draw_scan(cv::Mat& overlay) noexcept;
   clock::duration draw_mask(cv::Mat& overlay) noexcept;
-  clock::duration draw_targets(cv::Mat& overlay) noexcept;
+  clock::duration draw_contours(cv::Mat& overlay) noexcept;
+  clock::duration draw_groups(cv::Mat& overlay) noexcept;
+  clock::duration draw_hulls(cv::Mat& overlay) noexcept;
 
   void draw(
     cv::Mat& overlay,
@@ -102,17 +105,22 @@ private:
     return cv::getStructuringElement(shape, cv::Point(x, y));
   }
 
-  cv::Mat scan_{ tw, th, CV_8UC1 };
   std::uint64_t hash_{ 0 };
+
+  cv::Mat scan_{ tw, th, CV_8UC1 };
+  clock::duration scan_duration_{};
 
   cv::Mat mask_{ tw, th, CV_8UC1 };
   cv::cuda::GpuMat mask_data_{ tw, th, CV_8UC1 };
   cv::cuda::GpuMat mask_view_{ tw, th, CV_8UC1 };
   clock::duration mask_duration_{};
 
+  std::vector<polygon> contours_;
+  clock::duration contours_duration_{};
+  clock::duration groups_duration_{};
+  clock::duration hulls_duration_{};
+
   std::vector<target> targets_;
-  std::vector<polygon> targets_contours_;
-  clock::duration targets_duration_{};
   bool targets_ready_{ false };
 
   std::vector<cv::Vec4i> hierarchy_;

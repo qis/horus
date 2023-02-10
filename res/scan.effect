@@ -28,8 +28,8 @@ float PSColorMask(VertDataOut vi) : TARGET {
   const float4 src = frame.Sample(textureSampler, vi.uv);
   const float min = src.r < src.g ? (src.r < src.b ? src.r : src.b) : (src.g < src.b ? src.g : src.b);
   const float max = src.r > src.g ? (src.r > src.b ? src.r : src.b) : (src.g > src.b ? src.g : src.b);
-  float h = 0.0;        // 0 - 360°
-  float s = 0.0;        // 0 - 100%
+  float h = 0;          // 0 - 360°
+  float s = 0;          // 0 - 100%
   float v = max * 100;  // 0 - 100%
   if (max > 0 && max - min > 0) {
     s = (max - min) / max * 100;
@@ -42,7 +42,7 @@ float PSColorMask(VertDataOut vi) : TARGET {
     }
   }
   if (h < 0) {
-    h += 360.0;
+    h += 360;
   }
 
   // HSV colors under different conditions, obscured by bastion muzzle flash, obscured by graviton surge.

@@ -1,6 +1,30 @@
 # Settings
 Configuration options for third party software.
 
+## Mouse
+When using different settings, measure and adjust [src/horus/hero.cpp](src/horus/hero.cpp).
+
+Configure mouse speed in `Control Panel > Mouse Properties > Pointer Options`.
+
+```
++ Motion
+  Select a pointer speed: 2/10 (3rd notch)
+  [ ] Enhance pointer precision
+```
+
+Configure mouse acceleration in [Raw Accel][rawaccel].
+
+```
+Sens Multiplier: 1.3
+Y/X Ratio: 1.1
+Rotation: 0
++ Motivity
+  [x] Gain
+  Growth Rate: 1.5
+  Motivity: 2.5
+  Midpoint: 30
+```
+
 ## OBS Studio
 The "Output" settings are optional.
 
@@ -42,8 +66,6 @@ Sources
 ```
 
 ## Overwatch
-Configure game according to [res/images/settings](res/images/settings).
-
 When using a different resolution, adjust [res/draw.effect](res/draw.effect)
 and [src/horus/eye.hpp](src/horus/eye.hpp).
 
@@ -89,6 +111,11 @@ COMMUNICATION
 + PING
   PING - IN WORLD: G
   ENEMY: MIDDLE MOUSE BUTTON
++ PING - OPTIONS
+  ENEMY PING SENSITIVITY: 100%
+  DOUBLE-PRESS SPEED: 0.1
+  PING WHEEL PRESS DELAY: 0.01
+  PING OPACITY: 100.0%
 + EMOTES
   + EMOTE MENU: (EMPTY)
     EMOTE (DOWN): B
@@ -100,30 +127,18 @@ COMMUNICATION
     VOICE LINE (LEFT): 4
 ```
 
-Other settings are documented in [src/horus/hero.cpp](src/horus/hero.cpp).
+Other controls settings are documented in [src/horus/hero.cpp](src/horus/hero.cpp).
 
-## Mouse
-When using different settings, measure and adjust [src/horus/hero.cpp](src/horus/hero.cpp).
+### Video
+![VIDEO](res/images/settings/01-video-video.jpg "VIDEO")
+![GRAPHICS QUALITY](res/images/settings/02-video-graphics-quality.jpg "GRAPHICS QUALITY")
+![DETAILS](res/images/settings/03-video-details.jpg "DETAILS")
 
-Configure mouse speed in `Control Panel > Mouse Properties > Pointer Options`.
+### Gameplay
+![HUD](res/images/settings/04-gameplay-hud.jpg "HUD")
 
-```
-+ Motion
-  Select a pointer speed: 2/10 (3rd notch)
-  [ ] Enhance pointer precision
-```
-
-Configure mouse acceleration in [Raw Accel][rawaccel].
-
-```
-Sens Multiplier: 1.3
-Y/X Ratio: 1.1
-Rotation: 0
-+ Motivity
-  [x] Gain
-  Growth Rate: 1.5
-  Motivity: 2.5
-  Midpoint: 30
-```
+### Accessibility
+![GENERAL](res/images/settings/05-accessibility-general.jpg "GENERAL")
+![COLOR BLINDNESS](res/images/settings/06-accessibility-color-blindness.jpg "COLOR BLINDNESS")
 
 [rawaccel]: https://github.com/a1xd/rawaccel

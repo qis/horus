@@ -459,11 +459,11 @@ public:
   {
     info_.clear();
     eye_.draw_hulls(overlay);
-    for (const auto& target : eye_.targets()) {
-      for (const auto& point : points_) {
-        eye_.draw(overlay, centroid(target.hull, spread), 0x64DD17FF);
-      }
-    }
+    //for (const auto& target : eye_.targets()) {
+    //  for (const auto& point : points_) {
+    //    eye_.draw(overlay, centroid(target.hull, spread), 0x64DD17FF);
+    //  }
+    //}
     eye_.draw(overlay, mc_, target_ ? 0xD50000FF : 0x00B0FFFF);
     std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mx_, my_);
     eye_.draw(overlay, { 2, eye::th - 40 }, info_);

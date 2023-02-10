@@ -18,15 +18,30 @@ constexpr std::pair<std::int16_t, std::int16_t> view2mouse(float mx, float my) n
   return { static_cast<std::int16_t>(mx / mf), static_cast<std::int16_t>(my / mf) };
 }
 
-__forceinline std::optional<cv::Point> centroid(const eye::polygon& polygon) noexcept
+__forceinline cv::Point center(const cv::Rect& rect) noexcept
 {
-  const auto moments = cv::moments(polygon);
-  if (moments.m00 == 0.0) {
-    return std::nullopt;
+  return { rect.x + rect.width / 2, rect.y + rect.height / 2 };
+}
+
+__forceinline cv::Point centroid(const eye::polygon& polygon, double spread = 0.0) noexcept
+{
+  cv::Point point;
+  const auto rect = cv::boundingRect(polygon);
+  if (rect.width && rect.height) {
+    const auto moments = cv::moments(polygon);
+    if (moments.m00 != 0.0) {
+      point.x = static_cast<int>(moments.m10 / moments.m00);
+      point.y = static_cast<int>(moments.m01 / moments.m00);
+    } else {
+      point = center(rect);
+    }
+  } else {
+    point = center(rect);
   }
-  return cv::Point(
-    static_cast<int>(moments.m10 / moments.m00),
-    static_cast<int>(moments.m01 / moments.m00));
+  if (const auto top = rect.y + spread; top < point.y) {
+    point.y = top;
+  }
+  return point;
 }
 
 void connect_view_points(std::vector<cv::Point>& points, cv::Point p1, cv::Point p2, int skip = 0) noexcept
@@ -373,7 +388,8 @@ public:
   // + WEAPONS & ABILITIES
   //   PRIMARY FIRE: LEFT MOUSE BUTTON | MOUSE BUTTON 5
 
-  static constexpr double spread_radius = 40.0;
+  static constexpr double spread = 40.0;
+  static constexpr double prediction_multiplier = 2.5;
 
   reaper(boost::asio::any_io_executor executor, eye& eye, hid& hid) noexcept :
     base(executor, eye, hid)
@@ -390,8 +406,8 @@ public:
   {
     // Update mouse movement.
     std::tie(mx_, my_) = mouse2view(mx, my);
-    mc_.x = eye::tc.x + static_cast<int>(mx_ * 2.0f);
-    mc_.y = eye::tc.y + static_cast<int>(my_ * 2.0f);
+    mc_.x = eye::tc.x + static_cast<int>(mx_ * prediction_multiplier);
+    mc_.y = eye::tc.y + static_cast<int>(my_ * prediction_multiplier);
 
     // Create points between mouse movement and center of view.
     connect_view_points(points_, mc_, eye::tc, 1);
@@ -403,8 +419,7 @@ public:
         if (cv::pointPolygonTest(target.hull, point, false) > 0.0) {
           goto acquired;
         }
-        const auto center = centroid(target.hull);
-        if (center && cv::norm(*center - mc_) < spread_radius / 2.0) {
+        if (cv::norm(centroid(target.hull, spread) - mc_) < spread / 2.0) {
           goto acquired;
         }
       }
@@ -444,6 +459,11 @@ public:
   {
     info_.clear();
     eye_.draw_hulls(overlay);
+    for (const auto& target : eye_.targets()) {
+      for (const auto& point : points_) {
+        eye_.draw(overlay, centroid(target.hull, spread), 0x64DD17FF);
+      }
+    }
     eye_.draw(overlay, mc_, target_ ? 0xD50000FF : 0x00B0FFFF);
     std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mx_, my_);
     eye_.draw(overlay, { 2, eye::th - 40 }, info_);

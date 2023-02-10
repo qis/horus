@@ -1,6 +1,7 @@
 #include "hero.hpp"
 #include <format>
 #include <map>
+#include <optional>
 
 namespace horus::hero {
 namespace {
@@ -15,6 +16,17 @@ __forceinline std::pair<float, float> mouse2view(float mx, float my) noexcept
 constexpr std::pair<std::int16_t, std::int16_t> view2mouse(float mx, float my) noexcept
 {
   return { static_cast<std::int16_t>(mx / mf), static_cast<std::int16_t>(my / mf) };
+}
+
+__forceinline std::optional<cv::Point> centroid(const eye::polygon& polygon) noexcept
+{
+  const auto moments = cv::moments(polygon);
+  if (moments.m00 == 0.0) {
+    return std::nullopt;
+  }
+  return cv::Point(
+    static_cast<int>(moments.m10 / moments.m00),
+    static_cast<int>(moments.m01 / moments.m00));
 }
 
 void connect_view_points(std::vector<cv::Point>& points, cv::Point p1, cv::Point p2, int skip = 0) noexcept
@@ -361,6 +373,8 @@ public:
   // + WEAPONS & ABILITIES
   //   PRIMARY FIRE: LEFT MOUSE BUTTON | MOUSE BUTTON 5
 
+  static constexpr double spread_radius = 40.0;
+
   reaper(boost::asio::any_io_executor executor, eye& eye, hid& hid) noexcept :
     base(executor, eye, hid)
   {
@@ -383,10 +397,14 @@ public:
     connect_view_points(points_, mc_, eye::tc, 1);
 
     // Acquire target.
+    target_ = true;
     for (const auto& target : eye_.targets()) {
       for (const auto& point : points_) {
         if (cv::pointPolygonTest(target.hull, point, false) > 0.0) {
-          target_ = true;
+          goto acquired;
+        }
+        const auto center = centroid(target.hull);
+        if (center && cv::norm(*center - mc_) < spread_radius / 2.0) {
           goto acquired;
         }
       }

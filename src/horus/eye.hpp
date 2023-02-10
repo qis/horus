@@ -105,9 +105,8 @@ private:
     return cv::getStructuringElement(shape, cv::Point(x, y));
   }
 
-  std::uint64_t hash_{ 0 };
-
   cv::Mat scan_{ tw, th, CV_8UC1 };
+  std::uint64_t scan_hash_{ 0x00 };
   clock::duration scan_duration_{};
 
   cv::Mat mask_{ tw, th, CV_8UC1 };

@@ -156,6 +156,8 @@ const cv::Point eye::tc{ tw / 2, th / 2 };
 
 eye::eye()
 {
+  scan_.setTo(cv::Scalar(0));
+  scan_hash_ = mulxp3_hash(scan_.data, scan_.step * scan_.rows, 0);
   freetype_ = cv::freetype::createFreeType2();
   freetype_->loadFontData("C:/OBS/horus/res/fonts/PixelOperatorMono.ttf", 0);
 }
@@ -174,11 +176,11 @@ bool eye::scan(const cv::Mat& scan) noexcept
   cv::resize(scan, scan_, { tw, th }, 1.0 / tf, 1.0 / tf, cv::INTER_AREA);
 
   // Update hash (30 μs).
-  const auto hash = mulxp3_hash(scan_.data, scan_.step * scan_.rows, 0);
-  if (hash == hash_) {
+  const auto scan_hash = mulxp3_hash(scan_.data, scan_.step * scan_.rows, 0);
+  if (scan_hash == scan_hash_) {
     return false;
   }
-  hash_ = hash;
+  scan_hash_ = scan_hash;
   targets_ready_ = false;
   scan_duration_ = clock::now() - tp0;
   return true;

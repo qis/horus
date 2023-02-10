@@ -323,7 +323,9 @@ public:
 
     // Update frame counter.
     if (const auto now = clock::now(); now > frames_timeout_) {
-      scan_duration_ms_ = duration_cast<milliseconds<float>>(scan_duration_).count() / scans_;
+      if (scans_) {
+        scan_duration_ms_ = duration_cast<milliseconds<float>>(scan_duration_ / scans_).count();
+      }
       frames_duration_ = duration_cast<milliseconds<float>>(now - frames_timeout_ + interval);
       frames_per_second_ = std::round(frames_ / (frames_duration_.count() / 1000.0f));
       frames_timeout_ = now + interval;
@@ -475,7 +477,7 @@ private:
   int frames_per_second_{ 0 };
 
   clock::duration scan_duration_{};
-  float scan_duration_ms_{};
+  float scan_duration_ms_{ std::numeric_limits<float>::quiet_NaN() };
 
   std::atomic_bool input_{ false };
   std::atomic<clock::time_point> input_start_;

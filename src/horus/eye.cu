@@ -265,6 +265,30 @@ const std::vector<eye::polygon>& eye::hulls() noexcept
   return hulls_;
 }
 
+const std::vector<eye::polygon>& eye::polygons() noexcept
+{
+  if (polygons_ready_) {
+    return polygons_;
+  }
+  if (!hulls_ready_) {
+    hulls();
+  }
+  const auto tp0 = clock::now();
+
+  // TODO: Create connections.
+
+  const auto tp1 = clock::now();
+  connections_duration_ = tp1 - tp0;
+
+  // TODO: Create polygons.
+
+  const auto tp2 = clock::now();
+  polygons_duration_ = tp2 - tp1;
+
+  polygons_ready_ = true;
+  return polygons_;
+}
+
 clock::duration eye::draw_scan(cv::Mat& overlay) noexcept
 {
   assert(overlay.type() == CV_8UC4);
@@ -339,6 +363,36 @@ clock::duration eye::draw_hulls(cv::Mat& overlay) noexcept
   }
 
   return hulls_duration_;
+}
+
+clock::duration eye::draw_connections(cv::Mat& overlay) noexcept
+{
+  assert(overlay.type() == CV_8UC4);
+  assert(overlay.cols == vw);
+  assert(overlay.rows == vh);
+
+  if (!polygons_ready_) {
+    polygons();
+  }
+
+  // TODO: Draw connections.
+
+  return connections_duration_;
+}
+
+clock::duration eye::draw_polygons(cv::Mat& overlay) noexcept
+{
+  assert(overlay.type() == CV_8UC4);
+  assert(overlay.cols == vw);
+  assert(overlay.rows == vh);
+
+  if (!polygons_ready_) {
+    polygons();
+  }
+
+  // TODO: Draw polygons.
+
+  return polygons_duration_;
 }
 
 void eye::draw(

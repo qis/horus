@@ -64,11 +64,21 @@ public:
   ///
   const std::vector<polygon>& hulls() noexcept;
 
+  /// Creates polygons (??? μs).
+  ///
+  /// Uses scan provided by the previous @ref eye::scan call.
+  ///
+  /// @return Returns generated polygons on a @ref eye::vw x @ref eye::vh plane.
+  ///
+  const std::vector<polygon>& polygons() noexcept;
+
   clock::duration draw_scan(cv::Mat& overlay) noexcept;
   clock::duration draw_mask(cv::Mat& overlay) noexcept;
   clock::duration draw_contours(cv::Mat& overlay) noexcept;
   clock::duration draw_groups(cv::Mat& overlay) noexcept;
   clock::duration draw_hulls(cv::Mat& overlay) noexcept;
+  clock::duration draw_connections(cv::Mat& overlay) noexcept;
+  clock::duration draw_polygons(cv::Mat& overlay) noexcept;
 
   void draw(
     cv::Mat& overlay,
@@ -113,9 +123,14 @@ private:
   clock::duration contours_duration_{};
   clock::duration groups_duration_{};
   clock::duration hulls_duration_{};
+  clock::duration connections_duration_{};
+  clock::duration polygons_duration_{};
 
   std::vector<polygon> hulls_;
   bool hulls_ready_{ false };
+
+  std::vector<polygon> polygons_;
+  bool polygons_ready_{ false };
 
   std::vector<cv::Vec4i> hierarchy_;
   cv::cuda::GpuMat view_{ vw, vh, CV_8UC4 };

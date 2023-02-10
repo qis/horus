@@ -39,6 +39,8 @@ public:
     contours,
     groups,
     hulls,
+    connections,
+    polygons,
     hero,
     none,
   };
@@ -234,37 +236,41 @@ public:
 
     // Draw overlay.
     overlay_hsv_ = false;
-    overlay_desaturate_ = false;
+    overlay_desaturate_ = true;
     const auto view_setting = draw.load(std::memory_order_acquire);
     switch (view_setting) {
     case view::hsv:
       info_.append(" | hsv");
+      overlay_desaturate_ = false;
       overlay_hsv_ = true;
       break;
     case view::scan: {
       const auto ms = duration_cast<milliseconds<float>>(eye_.draw_scan(overlay_));
       std::format_to(std::back_inserter(info_), " | scan ({:5.3f} ms)", ms.count());
-      overlay_desaturate_ = true;
     } break;
     case view::mask: {
       const auto ms = duration_cast<milliseconds<float>>(eye_.draw_mask(overlay_));
       std::format_to(std::back_inserter(info_), " | mask ({:5.3f} ms)", ms.count());
-      overlay_desaturate_ = true;
     } break;
     case view::contours: {
       const auto ms = duration_cast<milliseconds<float>>(eye_.draw_contours(overlay_));
       std::format_to(std::back_inserter(info_), " | contours ({:5.3f} ms)", ms.count());
-      overlay_desaturate_ = true;
     } break;
     case view::groups: {
       const auto ms = duration_cast<milliseconds<float>>(eye_.draw_groups(overlay_));
       std::format_to(std::back_inserter(info_), " | groups ({:5.3f} ms)", ms.count());
-      overlay_desaturate_ = true;
     } break;
     case view::hulls: {
       const auto ms = duration_cast<milliseconds<float>>(eye_.draw_hulls(overlay_));
       std::format_to(std::back_inserter(info_), " | hulls ({:5.3f} ms)", ms.count());
-      overlay_desaturate_ = true;
+    } break;
+    case view::connections: {
+      const auto ms = duration_cast<milliseconds<float>>(eye_.draw_connections(overlay_));
+      std::format_to(std::back_inserter(info_), " | connections ({:5.3f} ms)", ms.count());
+    } break;
+    case view::polygons: {
+      const auto ms = duration_cast<milliseconds<float>>(eye_.draw_polygons(overlay_));
+      std::format_to(std::back_inserter(info_), " | polygons ({:5.3f} ms)", ms.count());
     } break;
     case view::hero:
       info_.append(" | hero");
@@ -273,6 +279,7 @@ public:
       }
       break;
     case view::none:
+      overlay_desaturate_ = false;
       break;
     }
 

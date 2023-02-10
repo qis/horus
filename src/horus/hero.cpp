@@ -126,6 +126,8 @@ public:
   // + WEAPONS & ABILITIES
   //   PRIMARY FIRE: LEFT MOUSE BUTTON | MOUSE BUTTON 5
 
+  static constexpr auto prediction_multiplier = 1.15;
+
   ana(const boost::asio::any_io_executor& executor, eye& eye, hid& hid) noexcept :
     base(executor, eye, hid)
   {}
@@ -138,14 +140,14 @@ public:
   void scan(float mx, float my) noexcept override
   {
     // Update mouse movement.
-    std::tie(mx, my) = mouse2view(mx, my);
-    mc_.x = eye::vc.x + static_cast<int>(mx);
-    mc_.y = eye::vc.y + static_cast<int>(my);
+    std::tie(mx_, my_) = mouse2view(mx, my);
+    mc_.x = eye::vc.x + static_cast<int>(mx_ * prediction_multiplier);
+    mc_.y = eye::vc.y + static_cast<int>(my_ * prediction_multiplier);
 
     // Acquire target.
     target_ = false;
-    for (const auto& hull : eye_.hulls()) {
-      if (cv::pointPolygonTest(hull, mc_, true) > 1.0) {
+    for (const auto& target : eye_.polygons()) {
+      if (cv::pointPolygonTest(target, mc_, true) > 1.0) {
         target_ = true;
         break;
       }
@@ -169,10 +171,23 @@ public:
     }
   }
 
+  bool draw(cv::Mat& overlay) noexcept override
+  {
+    info_.clear();
+    eye_.draw_polygons(overlay);
+    eye_.draw(overlay, mc_, target_ ? 0xD50000FF : 0x00B0FFFF);
+    std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mx_, my_);
+    eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
+    return false;
+  }
+
 private:
+  float mx_{};
+  float my_{};
   cv::Point mc_{};
   bool target_{ false };
   clock::time_point lockout_{};
+  std::string info_;
 };
 
 class brigitte : public base {
@@ -388,8 +403,9 @@ public:
   // + WEAPONS & ABILITIES
   //   PRIMARY FIRE: LEFT MOUSE BUTTON | MOUSE BUTTON 5
 
-  static constexpr double spread = 40.0;
-  static constexpr double prediction_multiplier = 2.5;
+  static constexpr auto spread = 40.0;
+  static constexpr auto prediction_multiplier = 2.5;
+  static constexpr auto draw_centroids = false;
 
   reaper(boost::asio::any_io_executor executor, eye& eye, hid& hid) noexcept :
     base(executor, eye, hid)
@@ -414,14 +430,14 @@ public:
 
     // Acquire target.
     target_ = true;
-    for (const auto& hull : eye_.hulls()) {
+    for (const auto& target : eye_.hulls()) {
       for (const auto& point : points_) {
-        if (cv::pointPolygonTest(hull, point, false) > 0.0) {
+        if (cv::pointPolygonTest(target, point, false) > 0.0) {
           goto acquired;
         }
-        if (cv::norm(centroid(hull, spread) - mc_) < spread / 2.0) {
-          goto acquired;
-        }
+      }
+      if (cv::norm(centroid(target, spread) - mc_) < spread / 2.0) {
+        goto acquired;
       }
     }
     target_ = false;
@@ -459,11 +475,11 @@ public:
   {
     info_.clear();
     eye_.draw_hulls(overlay);
-    //for (const auto& target : eye_.targets()) {
-    //  for (const auto& point : points_) {
-    //    eye_.draw(overlay, centroid(target.hull, spread), 0x64DD17FF);
-    //  }
-    //}
+    if constexpr (draw_centroids) {
+      for (const auto& target : eye_.hulls()) {
+        eye_.draw(overlay, centroid(target, spread), 0x64DD17FF);
+      }
+    }
     eye_.draw(overlay, mc_, target_ ? 0xD50000FF : 0x00B0FFFF);
     std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mx_, my_);
     eye_.draw(overlay, { 2, eye::vh - 40 }, info_);

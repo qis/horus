@@ -35,6 +35,7 @@ Configure OBS (the "Output" and "Audio" settings are optional).
   Output Mode: Advanced
   + Recording
     Container Format: mkv
+    Audio Track: [x] 1 [x] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6
     Encoder: NVIDIA NVENC H.264
     Rate Control: Lossless
     Keyframe Interval (seconds, 0=auto): 0
@@ -46,12 +47,22 @@ Configure OBS (the "Output" and "Audio" settings are optional).
 + Audio
   + Global Audio Devices
     Mic/Auxilary Audio: Microphone
+  + Hotkeys
+    Mic/Aux [x] Enable Push-to-talk
+    Push-to-talk delay: 0ms
 + Video
   Base (Canvas) Resolution: 1920x1080
   Output (Scaled) Resolution: 1920x1080
   Downscale Filter: Bilinear (Fastest, but blurry if scaling)
   Integer FPS Value: 120
++ Hotkeys
+  Start Recording: Ctrl + Home
+  End Recording: Ctrl + End
+  + Mix/Aux
+    Push-to-talk: `
 ```
+
+NOTE: Use right control key to not crouch.
 
 ### Sources
 Provide a game source for the plugin.
@@ -72,14 +83,31 @@ Provide a game source for the plugin.
   Horus
 ```
 
-## Kdenlive
-Configure project settings and create export preset for YouTube.
+### Audio Mixer
+Record "Desktop Audio" and "Mic/Aux" separately.
 
 ```
-Project > Project Settings...
-+ Settings
+Desktop Audio > Advanced Audio Properties
++ Desktop Audio
+  Mono: [ ]
+  Tracks: [x] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6
++ Mic/Aux
+  Mono: [x]
+  Tracks: [ ] 1 [x] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6
+```
+
+## Kdenlive
+Configure project defaults and create export preset for YouTube.
+
+```
+Settings > Configure Kdenlive...
++ Project Defaults
   + Full HD 1080
     1920x1080 120.00fps
+  Video tracks: 1
+  Audio tracks: 2
+  Audio channels: 2 channels (stereo)
+  Timeline Preview: x264-nvenc
 Project > Render...
 + Presets > Create new preset
   + Video

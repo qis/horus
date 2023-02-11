@@ -1,5 +1,5 @@
 # Horus
-OBS plugin for Overwatch enemy detection using OpenCV and CUDA in under 2 milliseconds.
+OBS plugin for Overwatch enemy detection using OpenCV and CUDA in under 3 milliseconds.
 
 At 120 FPS, the total delay between mouse movement recognized by the system (DirectInput)
 and new enemy positions recognized by the plugin ranges between 0.6 and 13.6 ms.
@@ -56,6 +56,11 @@ Creates convex hulls as target representations.
 ![Hulls](res/images/07-hulls.png "Hulls")
 
 Simulates mouse clicks when a target is under the cursor (with prediction).
+
+## Demo
+Short clip that demonstrates the result.
+
+[![Reaper](res/images/demos/reaper.jpg)](https://youtu.be/QO6qQR8j-lU "Reaper")
 
 ## Next
 This is a simple demo and many things can be improved. The following features will be added

@@ -421,7 +421,7 @@ private:
     boost::asio::post(screenshot_thread_pool_, [this, bytes = std::move(bytes), step]() noexcept {
       try {
         const auto index = screenshot_index_.fetch_add(1);
-        const auto filename = std::format("C:/OBS/screenshots/{:04d}.png", index);
+        const auto filename = std::format("C:/OBS/images/{:04d}.png", index);
         cv::Mat image(eye::sw, eye::sh, CV_8UC4, bytes.get(), step);
         cv::cvtColor(image, image, cv::COLOR_RGBA2BGRA);
         cv::imwrite(filename, image);

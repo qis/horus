@@ -26,7 +26,7 @@ Rotation: 0
 ```
 
 ## OBS Studio
-Configure OBS (the "Output" and "Audio" settings are optional).
+Configure OBS (the `Output` and `Audio` settings are optional).
 
 ```
 + General
@@ -39,10 +39,7 @@ Configure OBS (the "Output" and "Audio" settings are optional).
     Container Format: mkv
     Audio Track: ☑ 1 ☑ 2 ☐ 3 ☐ 4 ☐ 5 ☐ 6
     Encoder: NVIDIA NVENC H.264
-    Rate Control: Lossless
     Keyframe Interval (seconds, 0=auto): 0
-    Preset: Max Quality
-    Profile: high
     ☐ Look-ahead
     ☑ Psycho Visual Tuniung
     Max B-frames: 2
@@ -64,7 +61,23 @@ Configure OBS (the "Output" and "Audio" settings are optional).
     Push-to-talk: `
 ```
 
-NOTE: Use right control key to not crouch.
+Configure `Output > Recording` rate control for debugging (1050 MiB/Minute).
+
+```
+Rate Control: Lossless
+Preset: Max Quality
+Profile: high
+```
+
+Configure `Output > Recording` rate control for recording (200 MiB/Minute).
+
+```
+Rate Control: VBR
+Bitrate: 32000 Kbps
+Max Bitrate: 64000 Kbps
+Preset: Performance
+Profile: high
+```
 
 ### Sources
 Provide a game source for the plugin.
@@ -86,7 +99,7 @@ Provide a game source for the plugin.
 ```
 
 ### Audio Mixer
-Record "Desktop Audio" and "Mic/Aux" separately.
+Record desktop audio and microphone separately.
 
 ```
 Desktop Audio > Advanced Audio Properties

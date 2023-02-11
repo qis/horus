@@ -70,10 +70,10 @@ in the future when I have time.
 * Track targets to predict their movement in 3D space.
 * Train a neural network to categorize the targets.
 
-<details>
-<summary>Installation</summary>
+## Build
+This repository exists for demonstration purposes only. Build instructions are for the author's convenience.
 
-This repository exists for demonstration purposes only. Instructions are for the author's convenience.
+<details>
 
 1. Install [OBS-Studio][obs] to `C:\OBS`.
 2. Extract [OBS-Studio][obs] source code to `C:\OBS\src`.

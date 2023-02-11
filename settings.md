@@ -34,6 +34,8 @@ Configure OBS (the "Output" and "Audio" settings are optional).
 + Output
   Output Mode: Advanced
   + Recording
+    Type: Standard
+    Recording Path: C:/OBS/videos
     Container Format: mkv
     Audio Track: ☑ 1 ☑ 2 ☐ 3 ☐ 4 ☐ 5 ☐ 6
     Encoder: NVIDIA NVENC H.264

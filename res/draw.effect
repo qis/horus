@@ -1,5 +1,6 @@
 uniform float4x4 ViewProj;
 uniform texture2d image;
+uniform texture2d frame;
 uniform texture2d overlay;
 uniform bool desaturate = false;
 uniform bool hsv = false;
@@ -48,7 +49,10 @@ VertDataOut VSDefault(VertDataIn vi) {
 }
 
 float4 PSColorMask(VertDataOut vi) : TARGET {
-  float4 dst = image.Sample(textureSampler, vi.dst);
+  float4 dst = frame.Sample(textureSampler, vi.src);
+  if (dst.a == 0.0) {
+    dst = image.Sample(textureSampler, vi.dst);
+  }
   if (hsv) {
     const float min = dst.r < dst.g ? (dst.r < dst.b ? dst.r : dst.b) : (dst.g < dst.b ? dst.g : dst.b);
     const float max = dst.r > dst.g ? (dst.r > dst.b ? dst.r : dst.b) : (dst.g > dst.b ? dst.g : dst.b);

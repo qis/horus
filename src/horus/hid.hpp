@@ -7,6 +7,7 @@
 #include <array>
 #include <chrono>
 #include <thread>
+#include <vector>
 #include <cstdint>
 
 namespace horus {
@@ -60,7 +61,7 @@ public:
 
   ~hid();
 
-  void update() noexcept;
+  bool update() noexcept;
 
   constexpr int mx() const noexcept
   {
@@ -144,10 +145,10 @@ private:
   LPDIRECTINPUT8 input_{ nullptr };
 
   LPDIRECTINPUTDEVICE8 keybd_{ nullptr };
-  std::uint8_t keybd_state_[2][256]{};
+  std::array<std::vector<std::uint8_t>, 3> keybd_state_;
 
   LPDIRECTINPUTDEVICE8 mouse_{ nullptr };
-  DIMOUSESTATE2 mouse_state_[2]{};
+  std::array<DIMOUSESTATE2, 3> mouse_state_;
 
   boost::asio::ip::udp::socket socket_;
   boost::asio::ip::udp::endpoint endpoint_;

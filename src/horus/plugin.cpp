@@ -276,6 +276,8 @@ public:
       info_.append(" | hero");
       if (const auto hero = hero_) {
         overlay_desaturate_ = hero_->draw(overlay_);
+      } else {
+        overlay_desaturate_ = false;
       }
       break;
     case view::none:
@@ -352,10 +354,11 @@ private:
       if (const auto [ec] = co_await timer_.async_wait(); ec) {
         co_return;
       }
-      hid_.update();
+      if (!hid_.update()) {
+        continue;
+      }
       mx_.fetch_add(hid_.mx());
       my_.fetch_add(hid_.my());
-
       if (hid_.down(key::f7)) {
         if (hid_.pressed(key::f7)) {
           hid_.move(800, 0);

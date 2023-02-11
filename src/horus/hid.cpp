@@ -4,6 +4,12 @@
 #pragma comment(lib, "dxguid.lib")
 
 namespace horus {
+namespace {
+
+constexpr std::size_t keybd_state_size = 256;
+constexpr std::size_t mouse_state_size = sizeof(DIMOUSESTATE2);
+
+}  // namespace
 
 hid::hid(boost::asio::any_io_executor executor) noexcept : socket_(executor)
 {
@@ -69,6 +75,9 @@ hid::hid(boost::asio::any_io_executor executor) noexcept : socket_(executor)
       }
     }
   }
+  for (auto& keybd_state : keybd_state_) {
+    keybd_state.resize(keybd_state_size, std::uint8_t(0));
+  }
 
   LPDIRECTINPUTDEVICE8 mouse{ nullptr };
   if (SUCCEEDED(input_->CreateDevice(GUID_SysMouse, &mouse, nullptr))) {
@@ -80,6 +89,7 @@ hid::hid(boost::asio::any_io_executor executor) noexcept : socket_(executor)
       }
     }
   }
+  std::memset(mouse_state_.data(), 0, mouse_state_.size() * mouse_state_size);
 }
 
 hid::~hid()
@@ -97,16 +107,21 @@ hid::~hid()
   }
 }
 
-void hid::update() noexcept
+bool hid::update() noexcept
 {
-  std::memcpy(&keybd_state_[1], &keybd_state_[0], sizeof(keybd_state_[0]));
-  if (FAILED(keybd_->GetDeviceState(sizeof(keybd_state_[0]), keybd_state_[0]))) {
+  if (FAILED(keybd_->GetDeviceState(keybd_state_size, keybd_state_[2].data()))) {
     keybd_->Acquire();
+    return false;
   }
-  std::memcpy(&mouse_state_[1], &mouse_state_[0], sizeof(mouse_state_[0]));
-  if (FAILED(mouse_->GetDeviceState(sizeof(mouse_state_[0]), &mouse_state_[0]))) {
+  if (FAILED(mouse_->GetDeviceState(mouse_state_size, &mouse_state_[2]))) {
     mouse_->Acquire();
+    return false;
   }
+  std::swap(keybd_state_[1], keybd_state_[0]);
+  std::swap(keybd_state_[0], keybd_state_[2]);
+  mouse_state_[1] = mouse_state_[0];
+  mouse_state_[0] = mouse_state_[2];
+  return true;
 }
 
 void hid::mask(button button, std::chrono::milliseconds duration = std::chrono::milliseconds(0)) noexcept

@@ -9,7 +9,7 @@ Configure mouse speed in `Control Panel > Mouse Properties > Pointer Options`.
 ```
 + Motion
   Select a pointer speed: 2/10 (3rd notch)
-  [ ] Enhance pointer precision
+  ☐ Enhance pointer precision
 ```
 
 Configure mouse acceleration in [Raw Accel][rawaccel].
@@ -19,7 +19,7 @@ Sens Multiplier: 1.3
 Y/X Ratio: 1.1
 Rotation: 0
 + Motivity
-  [x] Gain
+  ☑ Gain
   Growth Rate: 1.5
   Motivity: 2.5
   Midpoint: 30
@@ -35,7 +35,7 @@ Configure OBS (the "Output" and "Audio" settings are optional).
   Output Mode: Advanced
   + Recording
     Container Format: mkv
-    Audio Track: [x] 1 [x] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6
+    Audio Track: ☑ 1 ☑ 2 ☐ 3 ☐ 4 ☐ 5 ☐ 6
     Encoder: NVIDIA NVENC H.264
     Rate Control: Lossless
     Keyframe Interval (seconds, 0=auto): 0
@@ -48,7 +48,7 @@ Configure OBS (the "Output" and "Audio" settings are optional).
   + Global Audio Devices
     Mic/Auxilary Audio: Microphone
   + Hotkeys
-    Mic/Aux [x] Enable Push-to-talk
+    Mic/Aux ☑ Enable Push-to-talk
     Push-to-talk delay: 0ms
 + Video
   Base (Canvas) Resolution: 1920x1080
@@ -89,11 +89,11 @@ Record "Desktop Audio" and "Mic/Aux" separately.
 ```
 Desktop Audio > Advanced Audio Properties
 + Desktop Audio
-  Mono: [ ]
-  Tracks: [x] 1 [ ] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6
+  Mono: ☐
+  Tracks: ☑ 1 ☐ 2 ☐ 3 ☐ 4 ☐ 5 ☐ 6
 + Mic/Aux
-  Mono: [x]
-  Tracks: [ ] 1 [x] 2 [ ] 3 [ ] 4 [ ] 5 [ ] 6
+  Mono: ☑
+  Tracks: ☐ 1 ☑ 2 ☐ 3 ☐ 4 ☐ 5 ☐ 6
 ```
 
 ## Kdenlive
@@ -114,18 +114,18 @@ Project > Render...
     Group: Lossless/HQ
     Preset name: YouTube 1080p60
     Container: mp4
-    [x] Resolution: 2560 x 1440
-    [x] Frame Rate: 60/1
-    [x] Scanning: Progressive
+    ☑ Resolution: 2560 x 1440
+    ☑ Frame Rate: 60/1
+    ☑ Scanning: Progressive
     Codec: hevc_nvenc
     Rate Control: Average Bitrate
-    [x] Bitrate: 60000k
+    ☑ Bitrate: 60000k
     GOP: 30 frame(s)
     B Frames: 2 frame(s)
   + Audio
-    [x] Channels: 2 (stereo)
+    ☑ Channels: 2 (stereo)
     Codec: aac
-    [x] Sample Rate: 48000 Hz
+    ☑ Sample Rate: 48000 Hz
     Rate Control: CBR - Constant Bitrate
     Bitrate: 160k
 ```

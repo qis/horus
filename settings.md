@@ -89,11 +89,10 @@ Record "Desktop Audio" and "Mic/Aux" separately.
 ```
 Desktop Audio > Advanced Audio Properties
 + Desktop Audio
-  Mono: ☐
   Tracks: ☑ 1 ☐ 2 ☐ 3 ☐ 4 ☐ 5 ☐ 6
 + Mic/Aux
-  Mono: ☑
   Tracks: ☐ 1 ☑ 2 ☐ 3 ☐ 4 ☐ 5 ☐ 6
+  Mono: ☑
 ```
 
 ## Kdenlive

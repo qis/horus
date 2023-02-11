@@ -44,48 +44,48 @@ __forceinline cv::Point centroid(const eye::polygon& polygon, double spread = 0.
   return point;
 }
 
-void connect_view_points(std::vector<cv::Point>& points, cv::Point p1, cv::Point p2, int skip = 0) noexcept
+void connect_view_points(std::vector<cv::Point>& points, cv::Point p0, cv::Point p1, int skip = 0) noexcept
 {
+  auto x0 = p0.x;
+  auto y0 = p0.y;
   auto x1 = p1.x;
   auto y1 = p1.y;
-  auto x2 = p2.x;
-  auto y2 = p2.y;
 
-  auto dx = std::abs(x2 - x1);
-  auto dy = std::abs(y2 - y1);
+  auto dx = std::abs(x1 - x0);
+  auto dy = std::abs(y1 - y0);
 
   points.clear();
   if (!dx && !dy) {
-    points.push_back(p1);
+    points.push_back(p0);
     return;
   }
 
   const auto steep = dy > dx;
 
   if (steep) {
+    std::swap(x0, y0);
     std::swap(x1, y1);
-    std::swap(x2, y2);
     std::swap(dx, dy);
   }
 
-  if (x1 > x2) {
-    std::swap(x1, x2);
-    std::swap(y1, y2);
+  if (x0 > x1) {
+    std::swap(x0, x1);
+    std::swap(y0, y1);
   }
 
-  const auto ystep = y1 < y2 ? 1 : -1;
+  const auto ystep = y0 < y1 ? 1 : -1;
 
-  auto lx = x1;
-  auto ly = y1;
+  auto lx = x0;
+  auto ly = y0;
   if (steep) {
     points.emplace_back(ly, lx);
   } else {
     points.emplace_back(lx, ly);
   }
 
-  auto y = y1;
+  auto y = y0;
   auto error = dx / 2.0f;
-  for (auto x = x1; x <= x2; x++) {
+  for (auto x = x0; x <= x1; x++) {
     if (skip) {
       if (std::abs(x - lx) > skip || std::abs(y - ly) > skip) {
         if (steep) {
@@ -140,14 +140,14 @@ public:
   void scan(float mx, float my) noexcept override
   {
     // Update mouse movement.
-    std::tie(mx_, my_) = mouse2view(mx, my);
-    mc_.x = eye::vc.x + static_cast<int>(mx_ * prediction_multiplier);
-    mc_.y = eye::vc.y + static_cast<int>(my_ * prediction_multiplier);
+    std::tie(vx_, vy_) = mouse2view(mx, my);
+    vc_.x = eye::vc.x + static_cast<int>(vx_ * prediction_multiplier);
+    vc_.y = eye::vc.y + static_cast<int>(vy_ * prediction_multiplier);
 
     // Acquire target.
     target_ = false;
     for (const auto& target : eye_.polygons()) {
-      if (cv::pointPolygonTest(target, mc_, true) > 1.0) {
+      if (cv::pointPolygonTest(target, vc_, true) > 1.0) {
         target_ = true;
         break;
       }
@@ -175,16 +175,16 @@ public:
   {
     info_.clear();
     eye_.draw_polygons(overlay);
-    eye_.draw(overlay, mc_, target_ ? 0xD50000FF : 0x00B0FFFF);
-    std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mx_, my_);
+    eye_.draw(overlay, vc_, target_ ? 0xD50000FF : 0x00B0FFFF);
+    std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", vx_, vy_);
     eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
     return false;
   }
 
 private:
-  float mx_{};
-  float my_{};
-  cv::Point mc_{};
+  float vx_{};
+  float vy_{};
+  cv::Point vc_{};
   bool target_{ false };
   clock::time_point lockout_{};
   std::string info_;
@@ -421,12 +421,12 @@ public:
   void scan(float mx, float my) noexcept override
   {
     // Update mouse movement.
-    std::tie(mx_, my_) = mouse2view(mx, my);
-    mc_.x = eye::vc.x + static_cast<int>(mx_ * prediction_multiplier);
-    mc_.y = eye::vc.y + static_cast<int>(my_ * prediction_multiplier);
+    std::tie(vx_, vy_) = mouse2view(mx, my);
+    vc_.x = eye::vc.x + static_cast<int>(vx_ * prediction_multiplier);
+    vc_.y = eye::vc.y + static_cast<int>(vy_ * prediction_multiplier);
 
     // Create points between mouse movement and center of view.
-    connect_view_points(points_, mc_, eye::vc, 1);
+    connect_view_points(points_, vc_, eye::vc, 1);
 
     // Acquire target.
     target_ = true;
@@ -436,7 +436,7 @@ public:
           goto acquired;
         }
       }
-      if (cv::norm(centroid(target, spread) - mc_) < spread / 2.0) {
+      if (cv::norm(centroid(target, spread) - vc_) < spread / 2.0) {
         goto acquired;
       }
     }
@@ -454,12 +454,12 @@ public:
 
     // Adjust crosshair and fire.
     if (target_) {
-      if (std::abs(mx_) > 4.0f || std::abs(my_) > 4.0f) {
-        auto vx = -mx_;
+      if (std::abs(vx_) > 4.0f || std::abs(vy_) > 4.0f) {
+        auto vx = -vx_;
         if (std::abs(vx) > 8) {
           vx = vx < 0.0f ? -8.0f : 8.0f;
         }
-        auto vy = -my_;
+        auto vy = -vy_;
         if (std::abs(vy) > 8) {
           vy = vy < 0.0f ? -8.0f : 8.0f;
         }
@@ -480,8 +480,8 @@ public:
         eye_.draw(overlay, centroid(target, spread), 0x64DD17FF);
       }
     }
-    eye_.draw(overlay, mc_, target_ ? 0xD50000FF : 0x00B0FFFF);
-    std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mx_, my_);
+    eye_.draw(overlay, vc_, target_ ? 0xD50000FF : 0x00B0FFFF);
+    std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", vx_, vy_);
     eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
     return false;
   }
@@ -495,9 +495,9 @@ public:
   }
 
 private:
-  float mx_{};
-  float my_{};
-  cv::Point mc_{};
+  float vx_{};
+  float vy_{};
+  cv::Point vc_{};
   bool target_{ false };
   std::vector<cv::Point> points_;
   clock::time_point lockout_{};

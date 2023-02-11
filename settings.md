@@ -26,10 +26,9 @@ Rotation: 0
 ```
 
 ## OBS Studio
-The "Output" settings are optional.
+Configure OBS (the "Output" and "Audio" settings are optional).
 
 ```
-Settings
 + General
   ☐ Automatically check for updates on startup
 + Output
@@ -37,22 +36,28 @@ Settings
   + Recording
     Container Format: mkv
     Encoder: NVIDIA NVENC H.264
-    Rate Control: VBR
-    Bitrate: 16000
-    Max Bitrate: 48000
-    Preset: Quality
+    Rate Control: Lossless
+    Keyframe Interval (seconds, 0=auto): 0
+    Preset: Max Quality
     Profile: high
     ☐ Look-ahead
     ☑ Psycho Visual Tuniung
     Max B-frames: 2
++ Audio
+  + Global Audio Devices
+    Mic/Auxilary Audio: Microphone
 + Video
   Base (Canvas) Resolution: 1920x1080
   Output (Scaled) Resolution: 1920x1080
   Downscale Filter: Bilinear (Fastest, but blurry if scaling)
-  Integer FPS Value: 75
+  Integer FPS Value: 120
+```
 
-Sources
-+ Overwatch
+### Sources
+Provide a game source for the plugin.
+
+```
++ Game Capture
   Mode: Capture specific window
   Window: [Overwatch.exe]: Overwatch
   Window Match Priority: Match title, otherwise find window of the same executable
@@ -63,6 +68,38 @@ Sources
   ☑ Use anti-cheat compatibility hook
   ☐ Capture third-party overlays (such as steam)
   Hook Rate: Normal (recommended)
++ Filters
+  Horus
+```
+
+## Kdenlive
+Configure project settings and create export preset for YouTube.
+
+```
+Project > Project Settings...
++ Settings
+  + Full HD 1080
+    1920x1080 120.00fps
+Project > Render...
++ Presets > Create new preset
+  + Video
+    Group: Lossless/HQ
+    Preset name: YouTube 1080p60
+    Container: mp4
+    [x] Resolution: 2560 x 1440
+    [x] Frame Rate: 60/1
+    [x] Scanning: Progressive
+    Codec: hevc_nvenc
+    Rate Control: Average Bitrate
+    [x] Bitrate: 60000k
+    GOP: 30 frame(s)
+    B Frames: 2 frame(s)
+  + Audio
+    [x] Channels: 2 (stereo)
+    Codec: aac
+    [x] Sample Rate: 48000 Hz
+    Rate Control: CBR - Constant Bitrate
+    Bitrate: 160k
 ```
 
 ## Overwatch
@@ -70,7 +107,7 @@ When using a different resolution, adjust [res/draw.effect](res/draw.effect)
 and [src/horus/eye.hpp](src/horus/eye.hpp).
 
 ### Controls
-Settings for all heroes.
+Configure settings for all heroes.
 
 ```
 GENERAL

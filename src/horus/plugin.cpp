@@ -7,6 +7,7 @@
 #include <atomic>
 #include <filesystem>
 #include <format>
+#include <mutex>
 #include <thread>
 #include <cstdio>
 
@@ -29,6 +30,41 @@
 // Max B-frames: 2
 
 namespace horus {
+namespace {
+
+void announce(const char* name) noexcept
+{
+  static std::mutex mutex;
+  static sound hero_sound;
+  const auto filename = std::format("C:/OBS/horus/res/sounds/hero/{}.wav", name);
+  if (std::filesystem::is_regular_file(filename)) {
+    std::lock_guard lock{ mutex };
+    hero_sound = { filename.data() };
+    hero_sound.play();
+  }
+}
+
+boost::asio::awaitable<void> monitor_focus(std::atomic_bool& focus) noexcept
+{
+  const auto executor = co_await boost::asio::this_coro::executor;
+  hero::timer timer{ executor };
+  HWND game = nullptr;
+  clock::time_point update{};
+  while (true) {
+    timer.expires_from_now(std::chrono::milliseconds(100));
+    if (const auto [ec] = co_await timer.async_wait(); ec) {
+      co_return;
+    }
+    if (const auto now = clock::now(); now > update) {
+      game = FindWindow("TankWindowClass", "Overwatch");
+      update = now + std::chrono::seconds(1);
+    }
+    focus.store(game ? game == GetForegroundWindow() : false, std::memory_order_release);
+  }
+  co_return;
+}
+
+}  // namespace
 
 class plugin {
 public:
@@ -92,10 +128,16 @@ public:
 
     obs_leave_graphics();
 
-    boost::asio::co_spawn(context_, monitor(), boost::asio::detached);
-    thread_ = std::thread([this]() noexcept {
+    boost::asio::co_spawn(focus_context_, monitor_focus(focus_), boost::asio::detached);
+    focus_thread_ = std::thread([this]() noexcept {
       boost::system::error_code ec;
-      context_.run(ec);
+      focus_context_.run(ec);
+    });
+
+    boost::asio::co_spawn(hid_context_, monitor(), boost::asio::detached);
+    hid_thread_ = std::thread([this]() noexcept {
+      boost::system::error_code ec;
+      hid_context_.run(ec);
     });
   }
 
@@ -107,9 +149,13 @@ public:
   ~plugin()
   {
     screenshot_thread_pool_.join();
-    if (thread_.joinable()) {
-      context_.stop();
-      thread_.join();
+    if (hid_thread_.joinable()) {
+      hid_context_.stop();
+      hid_thread_.join();
+    }
+    if (focus_thread_.joinable()) {
+      focus_context_.stop();
+      focus_thread_.join();
     }
     obs_enter_graphics();
     gs_stagesurface_destroy(screenshot_stagesurf_);
@@ -348,10 +394,11 @@ public:
 private:
   boost::asio::awaitable<void> monitor() noexcept
   {
-    auto executor = co_await boost::asio::this_coro::executor;
+    const auto executor = co_await boost::asio::this_coro::executor;
+    hero::timer timer{ executor };
     while (true) {
-      timer_.expires_from_now(std::chrono::milliseconds(1));
-      if (const auto [ec] = co_await timer_.async_wait(); ec) {
+      timer.expires_from_now(std::chrono::milliseconds(1));
+      if (const auto [ec] = co_await timer.async_wait(); ec) {
         co_return;
       }
       if (!hid_.update()) {
@@ -384,7 +431,7 @@ private:
       } else if (hid_.pressed(key::pause)) {
         screenshot_.store(true, std::memory_order_release);
       }
-      if (const auto hero = hero_) {
+      if (const auto hero = hero_; hero && focus_.load(std::memory_order_acquire)) {
         co_await hero->update();
       } else {
         mx_.store(0, std::memory_order_relaxed);
@@ -434,15 +481,6 @@ private:
     });
   }
 
-  void announce(const char* name) noexcept
-  {
-    const auto filename = std::format("C:/OBS/horus/res/sounds/hero/{}.wav", name);
-    if (std::filesystem::is_regular_file(filename)) {
-      hero_sound_ = { filename.data() };
-      hero_sound_.play();
-    }
-  }
-
   obs_data_t* settings_;
   obs_source_t* source_;
 
@@ -465,18 +503,22 @@ private:
   bool overlay_hsv_{ false };
 
   std::shared_ptr<hero::base> hero_;
-  sound hero_sound_;
 
-  std::thread thread_;
-  boost::asio::io_context context_{ 1 };
-  hero::timer timer_{ context_ };
+  std::thread focus_thread_;
+  boost::asio::io_context focus_context_{ 1 };
+  hero::timer focus_timer_{ focus_context_ };
+  std::atomic_bool focus_{ false };
+
+  std::thread hid_thread_;
+  boost::asio::io_context hid_context_{ 1 };
+  hid hid_{ hid_context_.get_executor() };
+
+  eye eye_;
 
   std::atomic_int mx_{};
   std::atomic_int my_{};
   clock::time_point mt_{};
   view view_{ draw.load() };
-  hid hid_{ context_.get_executor() };
-  eye eye_;
 
   std::string info_;
 
@@ -498,14 +540,13 @@ private:
   boost::asio::thread_pool screenshot_thread_pool_{ 1 };
 };
 
-boost::asio::awaitable<void> monitor() noexcept
+boost::asio::awaitable<void> monitor(const std::atomic_bool& focus) noexcept
 {
   auto executor = co_await boost::asio::this_coro::executor;
+  std::shared_ptr<hero::base> hero;
   hero::timer timer{ executor };
   hid hid{ executor };
   eye eye;
-
-  std::shared_ptr<hero::base> hero;
   while (true) {
     timer.expires_from_now(std::chrono::milliseconds(1));
     if (const auto [ec] = co_await timer.async_wait(); ec) {
@@ -514,12 +555,14 @@ boost::asio::awaitable<void> monitor() noexcept
     hid.update();
     if (hid.pressed(key::f9)) {
       hero = hero::next_damage_hero(executor, hero, eye, hid);
+      announce(hero->name());
       std::puts(hero->name());
     } else if (hid.pressed(key::f10)) {
       hero = hero::next_support_hero(executor, hero, eye, hid);
+      announce(hero->name());
       std::puts(hero->name());
     }
-    if (hero) {
+    if (hero && focus.load(std::memory_order_acquire)) {
       co_await hero->update();
     }
   }
@@ -624,8 +667,22 @@ MODULE_EXPORT int horus_main(int argc, char* argv[])
     signals.async_wait([&](boost::system::error_code ec, int count) noexcept {
       context.stop();
     });
-    boost::asio::co_spawn(context, horus::monitor(), boost::asio::detached);
+
+    std::atomic_bool focus{ false };
+    boost::asio::io_context focus_context{ 1 };
+    boost::asio::co_spawn(focus_context, horus::monitor_focus(focus), boost::asio::detached);
+    auto focus_thread = std::thread([&]() noexcept {
+      boost::system::error_code ec;
+      focus_context.run(ec);
+    });
+
+    boost::asio::co_spawn(context, horus::monitor(focus), boost::asio::detached);
     context.run();
+
+    if (focus_thread.joinable()) {
+      focus_context.stop();
+      focus_thread.join();
+    }
   }
   catch (const std::exception& e) {
     std::fputs(e.what(), stderr);

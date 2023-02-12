@@ -209,15 +209,15 @@ COMMUNICATION
 Other controls settings are documented in [src/horus/hero.cpp](src/horus/hero.cpp).
 
 ### Video
-![VIDEO](res/images/settings/01-video-video.jpg "VIDEO")
-![GRAPHICS QUALITY](res/images/settings/02-video-graphics-quality.jpg "GRAPHICS QUALITY")
-![DETAILS](res/images/settings/03-video-details.jpg "DETAILS")
+![VIDEO](res/images/settings/1-video-video.jpg "VIDEO")
+![GRAPHICS QUALITY](res/images/settings/2-video-graphics-quality.jpg "GRAPHICS QUALITY")
+![DETAILS](res/images/settings/3-video-details.jpg "DETAILS")
 
 ### Gameplay
-![HUD](res/images/settings/04-gameplay-hud.jpg "HUD")
+![HUD](res/images/settings/4-gameplay-hud.jpg "HUD")
 
 ### Accessibility
-![GENERAL](res/images/settings/05-accessibility-general.jpg "GENERAL")
-![COLOR BLINDNESS](res/images/settings/06-accessibility-color-blindness.jpg "COLOR BLINDNESS")
+![GENERAL](res/images/settings/5-accessibility-general.jpg "GENERAL")
+![COLOR BLINDNESS](res/images/settings/6-accessibility-color-blindness.jpg "COLOR BLINDNESS")
 
 [rawaccel]: https://github.com/a1xd/rawaccel

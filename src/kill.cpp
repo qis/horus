@@ -1,10 +1,8 @@
 #include <windows.h>
 #include <tlhelp32.h>
 #include <chrono>
-#include <format>
 #include <string_view>
 #include <thread>
-#include <cstdio>
 
 DWORD find_process(std::string_view executable) noexcept
 {
@@ -57,18 +55,13 @@ int main(int argc, char* argv[])
   }
   if (const auto window = find_window(process)) {
     PostMessage(window, WM_CLOSE, 0, 0);
-    const auto tp0 = std::chrono::system_clock::now();
-    do {
-      if (!find_process(executable)) {
-        return EXIT_SUCCESS;
-      }
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    } while (std::chrono::system_clock::now() - tp0 < std::chrono::seconds(5));
-    return EXIT_FAILURE;
-  } else if (!find_process(executable)) {
-    return EXIT_SUCCESS;
   }
-  std::fputs(std::format("Could not find main window for process {}.\r\n", process).data(), stderr);
-  std::fflush(stderr);
+  const auto tp0 = std::chrono::system_clock::now();
+  do {
+    if (!find_process(executable)) {
+      return EXIT_SUCCESS;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  } while (std::chrono::system_clock::now() - tp0 < std::chrono::seconds(5));
   return EXIT_FAILURE;
 }

@@ -174,7 +174,7 @@ public:
     target_ = false;
   acquired:
 
-    // Set trigger.
+    // Set trigger state.
     const auto scoped = down(button::right) && up(button::down);
     const auto manual = down(button::down) && up(button::right);
     trigger_ = scoped || manual;
@@ -477,12 +477,15 @@ public:
     target_ = false;
   acquired:
 
+    // Set trigger state.
+    trigger_ = down(button::right);
+
     // Handle lockout and trigger key.
     const auto now = clock::now();
     if (down(button::left)) {
       lockout_ = now + 128ms;
     }
-    if (now < lockout_ || !down(button::right)) {
+    if (now < lockout_ || !trigger_) {
       return true;
     }
 
@@ -515,7 +518,9 @@ public:
         eye_.draw(overlay, centroid(target, spread), 0x64DD17FF);
       }
     }
-    eye_.draw(overlay, vc_, target_ ? 0xD50000FF : 0x00B0FFFF);
+    if (trigger_) {
+      eye_.draw(overlay, vc_, target_ ? 0xD50000FF : 0x00B0FFFF);
+    }
     std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", vx_, vy_);
     eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
     return false;
@@ -534,6 +539,7 @@ private:
   float vy_{};
   cv::Point vc_{};
   bool target_{ false };
+  bool trigger_{ false };
   std::vector<cv::Point> points_;
   clock::time_point lockout_{};
   std::string info_;

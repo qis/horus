@@ -481,8 +481,10 @@ private:
       } else if (hid_.pressed(key::pause)) {
         screenshot_.store(true, std::memory_order_release);
       }
-      if (const auto hero = hero_; hero && focus_.load(std::memory_order_acquire)) {
-        co_await hero->update();
+      if (const auto hero = hero_) {
+        if (focus_.load(std::memory_order_acquire)) {
+          co_await hero->update();
+        }
       } else {
         mx_.store(0, std::memory_order_relaxed);
         my_.store(0, std::memory_order_relaxed);

@@ -72,7 +72,6 @@ Short clip that demonstrates the result.
 This is a simple demo and many things can be improved. The following features will be added
 in the future when I have time.
 
-* Create concave hulls as target representations.
 * Track targets to predict their movement in 3D space.
 * Train a neural network to categorize the targets.
 

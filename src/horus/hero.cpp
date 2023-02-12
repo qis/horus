@@ -13,6 +13,16 @@ __forceinline std::pair<float, float> mouse2view(float mx, float my) noexcept
   return { mx * mf, my * mf };
 }
 
+__forceinline std::pair<float, float> mouse2view(const hid::mouse& movement, clock::time_point tp) noexcept
+{
+  constexpr milliseconds<float> fd{ 1000.0f / eye::fps };
+  const auto now = clock::now();
+  const auto sc = duration_cast<milliseconds<float>>(now - tp);
+  const auto md = duration_cast<milliseconds<float>>(now - movement.tp);
+  const auto mf = md / (fd > sc ? fd - sc : fd);
+  return mouse2view(movement.mx / mf, movement.my / mf);
+}
+
 constexpr std::pair<std::int16_t, std::int16_t> view2mouse(float mx, float my) noexcept
 {
   return { static_cast<std::int16_t>(mx / mf), static_cast<std::int16_t>(my / mf) };
@@ -137,10 +147,13 @@ public:
     return "ana";
   }
 
-  void scan(float mx, float my) noexcept override
+  bool scan(clock::time_point tp) noexcept override
   {
+    // Get targets.
+    const auto& targets = eye_.polygons();
+
     // Update mouse movement.
-    std::tie(vx_, vy_) = mouse2view(mx, my);
+    std::tie(vx_, vy_) = mouse2view(movement(), tp);
     vc_.x = eye::vc.x + static_cast<int>(vx_ * prediction_multiplier);
     vc_.y = eye::vc.y + static_cast<int>(vy_ * prediction_multiplier);
 
@@ -174,7 +187,7 @@ public:
       lockout_ = now + 300ms;
     }
     if (now < lockout_) {
-      return;
+      return true;
     }
 
     // Fire if a target was acquired.
@@ -182,6 +195,7 @@ public:
       mask(button::up, 16ms);
       lockout_ = now + 128ms;
     }
+    return true;
   }
 
   bool draw(cv::Mat& overlay) noexcept override
@@ -435,10 +449,13 @@ public:
     return "reaper";
   }
 
-  void scan(float mx, float my) noexcept override
+  bool scan(clock::time_point tp) noexcept override
   {
+    // Get targets.
+    const auto& targets = eye_.hulls();
+
     // Update mouse movement.
-    std::tie(vx_, vy_) = mouse2view(mx, my);
+    std::tie(vx_, vy_) = mouse2view(movement(), tp);
     vc_.x = eye::vc.x + static_cast<int>(vx_ * prediction_multiplier);
     vc_.y = eye::vc.y + static_cast<int>(vy_ * prediction_multiplier);
 
@@ -447,7 +464,7 @@ public:
 
     // Acquire target.
     target_ = true;
-    for (const auto& target : eye_.hulls()) {
+    for (const auto& target : targets) {
       for (const auto& point : points_) {
         if (cv::pointPolygonTest(target, point, false) > 0.0) {
           goto acquired;
@@ -466,7 +483,7 @@ public:
       lockout_ = now + 128ms;
     }
     if (now < lockout_ || !down(button::right)) {
-      return;
+      return true;
     }
 
     // Adjust crosshair and fire.
@@ -486,6 +503,7 @@ public:
       mask(button::up, 16ms);
       lockout_ = now + 128ms;
     }
+    return true;
   }
 
   bool draw(cv::Mat& overlay) noexcept override

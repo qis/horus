@@ -257,24 +257,9 @@ public:
     // Process scan.
     const auto scan = eye_.scan({ eye::sw, eye::sh, CV_8UC1, data, step });
 
-    // Get mouse movement.
-    const auto mt = mt_;
-    float mx = mx_.exchange(0);
-    float my = my_.exchange(0);
-    mt_ = clock::now();
-
-    // Calculate mouse movement until next frame.
-    constexpr milliseconds<float> frame_duration{ 1000.0f / eye::fps };
-    const auto scan_duration = duration_cast<milliseconds<float>>(mt_ - tp0);
-    const auto move_duration = duration_cast<milliseconds<float>>(mt_ - mt);
-    const auto move_factor = move_duration /
-      (frame_duration > scan_duration ? frame_duration - scan_duration : frame_duration);
-    mx /= move_factor;
-    my /= move_factor;
-
     // Process hero.
-    if (const auto hero = hero_) {
-      hero->scan(mx, my);
+    if (const auto hero = hero_; !hero || !hero->scan(tp0)) {
+      hid_.movement();
     }
 
     // Get info time point.
@@ -369,17 +354,6 @@ public:
       gs_texrender_reset(texrender_frame_);
     }
 
-    // Draw input delay.
-    if (input_.load(std::memory_order_acquire)) {
-      const auto duration = tp1 - input_start_.load(std::memory_order_acquire);
-      const auto duration_ms = duration_cast<milliseconds<float>>(duration).count();
-      std::format_to(std::back_inserter(info_), " | {:5.3f} ms", duration_ms);
-      if (duration > 1s) {
-        bool expected = true;
-        input_.compare_exchange_strong(expected, false);
-      }
-    }
-
     // Draw info text.
     eye_.draw(overlay_, { 2, eye::vh - 20 }, info_);
 
@@ -451,17 +425,8 @@ private:
       if (!hid_.update()) {
         continue;
       }
-      mx_.fetch_add(hid_.mx());
-      my_.fetch_add(hid_.my());
-      if (hid_.pressed(key::f6)) {
+      if (hid_.pressed(key::f7)) {
         demo_toggle_.store(true, std::memory_order_release);
-      } else if (hid_.down(key::f7)) {
-        if (hid_.pressed(key::f7)) {
-          hid_.move(800, 0);
-        } else if (hid_.mx()) {
-          input_start_.store(clock::now(), std::memory_order_release);
-          input_.store(true, std::memory_order_release);
-        }
       } else if (hid_.pressed(key::f9)) {
         hero_ = hero::next_damage_hero(executor, hero_, eye_, hid_);
         announce(hero_->name());
@@ -484,9 +449,6 @@ private:
         if (focus_.load(std::memory_order_acquire)) {
           co_await hero->update();
         }
-      } else {
-        mx_.store(0, std::memory_order_relaxed);
-        my_.store(0, std::memory_order_relaxed);
       }
     }
     co_return;
@@ -568,9 +530,6 @@ private:
 
   eye eye_;
 
-  std::atomic_int mx_{};
-  std::atomic_int my_{};
-  clock::time_point mt_{};
   view view_{ draw.load() };
 
   std::string info_;
@@ -587,9 +546,6 @@ private:
   bool demo_{ false };
   std::array<std::vector<eye::polygon>, 2> demo_pause_;
   std::atomic_bool demo_toggle_{ false };
-
-  std::atomic_bool input_{ false };
-  std::atomic<clock::time_point> input_start_;
 
   std::atomic_bool screenshot_{ false };
   std::atomic_size_t screenshot_index_{ 0 };

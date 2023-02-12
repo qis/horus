@@ -28,7 +28,10 @@ public:
 
   virtual const char* name() const noexcept = 0;
 
-  virtual void scan(float mx, float my) noexcept {}
+  virtual bool scan(clock::time_point tp) noexcept
+  {
+    return false;
+  }
 
   virtual bool draw(cv::Mat& overlay) noexcept
   {
@@ -48,6 +51,11 @@ protected:
     timer_.expires_from_now(duration);
     co_await timer_.async_wait();
     co_return;
+  }
+
+  hid::mouse movement() noexcept
+  {
+    return hid_.movement();
   }
 
   constexpr bool up(button button) const noexcept

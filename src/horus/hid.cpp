@@ -117,10 +117,35 @@ bool hid::update() noexcept
     mouse_->Acquire();
     return false;
   }
+
   std::swap(keybd_state_[1], keybd_state_[0]);
   std::swap(keybd_state_[0], keybd_state_[2]);
   mouse_state_[1] = mouse_state_[0];
   mouse_state_[0] = mouse_state_[2];
+
+  const auto mx = static_cast<std::int32_t>(mouse_state_[0].lX);
+  const auto my = static_cast<std::int32_t>(mouse_state_[0].lY);
+
+  mx_ += mx;
+  my_ += my;
+
+  const auto ax = static_cast<std::uint64_t>(static_cast<std::uint32_t>(mx_));
+  const auto ay = static_cast<std::uint64_t>(static_cast<std::uint32_t>(my_));
+  auto mm = (ax << 32) + (ay & 0xFFFFFFFF);
+
+  if (mouse_movement_shared_.compare_exchange_weak(mouse_movement_, mm)) {
+    mouse_movement_ = mm;
+    return true;
+  }
+
+  mx_ = mx;
+  my_ = my;
+
+  const auto ux = static_cast<std::uint64_t>(static_cast<std::uint32_t>(mx_));
+  const auto uy = static_cast<std::uint64_t>(static_cast<std::uint32_t>(my_));
+  mouse_movement_ = (ux << 32) + (uy & 0xFFFFFFFF);
+  mouse_movement_shared_.store(mouse_movement_);
+
   return true;
 }
 

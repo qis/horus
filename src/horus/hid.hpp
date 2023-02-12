@@ -5,6 +5,7 @@
 #include <dinput.h>
 #include <dinputd.h>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <vector>
@@ -53,6 +54,12 @@ class HORUS_API hid {
 public:
   static constexpr std::chrono::seconds maximum_mask_duration{ 10 };
 
+  struct mouse {
+    std::int32_t mx{ 0 };
+    std::int32_t my{ 0 };
+    clock::time_point tp{};
+  };
+
   hid(boost::asio::any_io_executor executor) noexcept;
 
   hid(hid&& other) = delete;
@@ -64,19 +71,12 @@ public:
 
   bool update() noexcept;
 
-  constexpr int mx() const noexcept
+  hid::mouse movement() noexcept
   {
-    return mouse_state_[0].lX;
-  }
-
-  constexpr int my() const noexcept
-  {
-    return mouse_state_[0].lY;
-  }
-
-  constexpr int mz() const noexcept
-  {
-    return mouse_state_[0].lZ;
+    const auto mm = mouse_movement_shared_.exchange(0);
+    const auto mx = static_cast<std::int32_t>(static_cast<std::uint32_t>(mm >> 32));
+    const auto my = static_cast<std::int32_t>(static_cast<std::uint32_t>(mm & 0xFFFFFFFF));
+    return { mx, my, std::exchange(tp_, clock::now()) };
   }
 
   constexpr bool up(button button) const noexcept
@@ -150,6 +150,12 @@ private:
 
   LPDIRECTINPUTDEVICE8 mouse_{ nullptr };
   std::array<DIMOUSESTATE2, 3> mouse_state_;
+
+  std::int32_t mx_{ 0 };
+  std::int32_t my_{ 0 };
+  clock::time_point tp_{ clock::now() };
+  std::uint64_t mouse_movement_{ 0 };
+  std::atomic_uint64_t mouse_movement_shared_{ 0 };
 
   boost::asio::ip::udp::socket socket_;
   boost::asio::ip::udp::endpoint endpoint_;

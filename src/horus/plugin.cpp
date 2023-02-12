@@ -90,11 +90,14 @@ public:
   {
     obs_enter_graphics();
 
-    texrender_rgba_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
-    assert(texrender_rgba_);
+    texrender_frame_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+    assert(texrender_frame_);
 
     texrender_scan_ = gs_texrender_create(GS_R8, GS_ZS_NONE);
     assert(texrender_scan_);
+
+    texrender_draw_ = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+    assert(texrender_draw_);
 
     scan_effect_ = gs_effect_create_from_file("C:/OBS/horus/res/scan.effect", nullptr);
     assert(scan_effect_);
@@ -142,6 +145,26 @@ public:
       boost::system::error_code ec;
       hid_context_.run(ec);
     });
+
+    const auto w = 4;
+    const auto h = 9;
+    auto x = eye::vw - w * 2 - 5;
+    auto y = eye::vh - h - 3;
+    for (auto i = 0; i < 2; i++) {
+      eye::polygon bg;
+      eye::polygon fg;
+      bg.emplace_back(x, y);
+      fg.emplace_back(x + 1, y + 1);
+      bg.emplace_back(x + w, y);
+      fg.emplace_back(x + w - 1, y + 1);
+      bg.emplace_back(x + w, y + h);
+      fg.emplace_back(x + w - 1, y + h - 1);
+      bg.emplace_back(x, y + h);
+      fg.emplace_back(x + 1, y + h - 1);
+      demo_pause_[0].push_back(bg);
+      demo_pause_[1].push_back(fg);
+      x += w + 2;
+    }
   }
 
   plugin(plugin&& other) = delete;
@@ -166,8 +189,9 @@ public:
     gs_effect_destroy(draw_effect_);
     gs_stagesurface_destroy(scan_stagesurf_);
     gs_effect_destroy(scan_effect_);
+    gs_texrender_destroy(texrender_draw_);
     gs_texrender_destroy(texrender_scan_);
-    gs_texrender_destroy(texrender_rgba_);
+    gs_texrender_destroy(texrender_frame_);
     obs_leave_graphics();
   }
 
@@ -187,7 +211,7 @@ public:
 
     // Render target video source to frame texture (15 μs).
     if (!demo_) {
-      if (!gs_texrender_begin(texrender_rgba_, eye::sw, eye::sh)) {
+      if (!gs_texrender_begin(texrender_frame_, eye::sw, eye::sh)) {
         obs_source_skip_video_filter(source_);
         return;
       }
@@ -200,9 +224,9 @@ public:
         -100.0f,
         100.0f);
       obs_source_video_render(src);
-      gs_texrender_end(texrender_rgba_);
+      gs_texrender_end(texrender_frame_);
     }
-    const auto frame = gs_texrender_get_texture(texrender_rgba_);
+    const auto frame = gs_texrender_get_texture(texrender_frame_);
 
     // Render rgba texture to scan texture (5 μs).
     if (!gs_texrender_begin(texrender_scan_, eye::sw, eye::sh)) {
@@ -342,7 +366,7 @@ public:
     // Reset texture renderers.
     gs_texrender_reset(texrender_scan_);
     if (!demo_) {
-      gs_texrender_reset(texrender_rgba_);
+      gs_texrender_reset(texrender_frame_);
     }
 
     // Draw input delay.
@@ -361,7 +385,9 @@ public:
 
     // Draw demo border.
     if (demo_) {
-      cv::rectangle(overlay_, cv::Rect(0, 0, eye::vw, eye::vh), eye::scalar(0x00B0FFFF), 1, cv::LINE_4);
+      cv::fillPoly(overlay_, demo_pause_[0], eye::scalar(0x000000A0), cv::LINE_4);
+      cv::fillPoly(overlay_, demo_pause_[1], eye::scalar(0x00B0FFFF), cv::LINE_4);
+      cv::rectangle(overlay_, demo_borders_, eye::scalar(0x000000FF), 1, cv::LINE_4);
     }
 
     // Set overlay texture image.
@@ -467,8 +493,7 @@ private:
 
   void screenshot() noexcept
   {
-    gs_texrender_reset(texrender_rgba_);
-    if (!gs_texrender_begin(texrender_rgba_, eye::sw, eye::sh)) {
+    if (!gs_texrender_begin(texrender_draw_, eye::sw, eye::sh)) {
       return;
     }
     gs_enable_blending(false);
@@ -480,17 +505,18 @@ private:
       -100.0f,
       100.0f);
     obs_source_video_render(source_);
-    gs_texrender_end(texrender_rgba_);
+    gs_texrender_end(texrender_draw_);
 
     uint32_t step = 0;
     uint8_t* data = nullptr;
-    gs_stage_texture(screenshot_stagesurf_, gs_texrender_get_texture(texrender_rgba_));
+    gs_stage_texture(screenshot_stagesurf_, gs_texrender_get_texture(texrender_draw_));
     if (!gs_stagesurface_map(screenshot_stagesurf_, &data, &step)) {
       return;
     }
     std::unique_ptr<uchar[]> bytes(new uchar[step * eye::sh]);
     std::memcpy(bytes.get(), data, step * eye::sh);
     gs_stagesurface_unmap(screenshot_stagesurf_);
+    gs_texrender_reset(texrender_draw_);
 
     boost::asio::post(screenshot_thread_pool_, [this, bytes = std::move(bytes), step]() noexcept {
       try {
@@ -508,8 +534,9 @@ private:
   obs_data_t* settings_;
   obs_source_t* source_;
 
-  gs_texrender_t* texrender_rgba_{ nullptr };
+  gs_texrender_t* texrender_frame_{ nullptr };
   gs_texrender_t* texrender_scan_{ nullptr };
+  gs_texrender_t* texrender_draw_{ nullptr };
 
   gs_effect_t* scan_effect_{ nullptr };
   gs_eparam_t* scan_effect_frame_{ nullptr };
@@ -557,6 +584,8 @@ private:
   float scan_duration_ms_{ std::numeric_limits<float>::quiet_NaN() };
 
   bool demo_{ false };
+  cv::Rect demo_borders_{ 0, 0, eye::vw, eye::vh };
+  std::array<std::vector<eye::polygon>, 2> demo_pause_;
   std::atomic_bool demo_toggle_{ false };
 
   std::atomic_bool input_{ false };

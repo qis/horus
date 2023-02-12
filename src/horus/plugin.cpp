@@ -387,7 +387,6 @@ public:
     if (demo_) {
       cv::fillPoly(overlay_, demo_pause_[0], eye::scalar(0x000000A0), cv::LINE_4);
       cv::fillPoly(overlay_, demo_pause_[1], eye::scalar(0x00B0FFFF), cv::LINE_4);
-      cv::rectangle(overlay_, demo_borders_, eye::scalar(0x000000FF), 1, cv::LINE_4);
     }
 
     // Set overlay texture image.
@@ -586,7 +585,6 @@ private:
   float scan_duration_ms_{ std::numeric_limits<float>::quiet_NaN() };
 
   bool demo_{ false };
-  cv::Rect demo_borders_{ 0, 0, eye::vw, eye::vh };
   std::array<std::vector<eye::polygon>, 2> demo_pause_;
   std::atomic_bool demo_toggle_{ false };
 

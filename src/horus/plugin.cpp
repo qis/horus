@@ -385,8 +385,8 @@ public:
 
     // Draw demo border.
     if (demo_) {
-      cv::fillPoly(overlay_, demo_pause_[0], eye::scalar(0x000000A0), cv::LINE_4);
-      cv::fillPoly(overlay_, demo_pause_[1], eye::scalar(0x00B0FFFF), cv::LINE_4);
+      cv::fillPoly(overlay_, demo_pause_[0], eye::scalar(0x000000A0), cv::LINE_AA);
+      cv::fillPoly(overlay_, demo_pause_[1], eye::scalar(0xC62828FF), cv::LINE_4);
     }
 
     // Set overlay texture image.

@@ -126,7 +126,7 @@ public:
   // + WEAPONS & ABILITIES
   //   PRIMARY FIRE: LEFT MOUSE BUTTON | MOUSE BUTTON 5
 
-  static constexpr auto prediction_multiplier = 1.15;
+  static constexpr auto prediction_multiplier = 2.5;
 
   ana(const boost::asio::any_io_executor& executor, eye& eye, hid& hid) noexcept :
     base(executor, eye, hid)
@@ -144,14 +144,27 @@ public:
     vc_.x = eye::vc.x + static_cast<int>(vx_ * prediction_multiplier);
     vc_.y = eye::vc.y + static_cast<int>(vy_ * prediction_multiplier);
 
+    // Create points between mouse movement and center of view.
+    connect_view_points(points_, vc_, eye::vc, 1);
+
     // Acquire target.
-    target_ = false;
+    target_ = true;
     for (const auto& target : eye_.polygons()) {
-      if (cv::pointPolygonTest(target, vc_, true) > 1.0) {
-        target_ = true;
-        break;
+      const auto rect = cv::boundingRect(target);
+      const auto margin = std::max(1.0, rect.width / 16.0);
+      for (const auto& point : points_) {
+        if (cv::pointPolygonTest(target, point, true) > margin) {
+          goto acquired;
+        }
       }
     }
+    target_ = false;
+  acquired:
+
+    // Set trigger.
+    const auto scoped = down(button::right) && up(button::down);
+    const auto manual = down(button::down) && up(button::right);
+    trigger_ = scoped || manual;
 
     // Handle lockout.
     const auto now = clock::now();
@@ -165,7 +178,7 @@ public:
     }
 
     // Fire if a target was acquired.
-    if (target_) {
+    if (target_ && trigger_) {
       mask(button::up, 16ms);
       lockout_ = now + 128ms;
     }
@@ -175,7 +188,9 @@ public:
   {
     info_.clear();
     eye_.draw_polygons(overlay);
-    eye_.draw(overlay, vc_, target_ ? 0xD50000FF : 0x00B0FFFF);
+    if (trigger_) {
+      eye_.draw(overlay, vc_, target_ ? 0xD50000FF : 0x00B0FFFF);
+    }
     std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", vx_, vy_);
     eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
     return false;
@@ -186,6 +201,8 @@ private:
   float vy_{};
   cv::Point vc_{};
   bool target_{ false };
+  bool trigger_{ false };
+  std::vector<cv::Point> points_;
   clock::time_point lockout_{};
   std::string info_;
 };

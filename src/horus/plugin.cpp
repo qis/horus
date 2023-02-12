@@ -75,7 +75,7 @@ public:
     contours,
     groups,
     hulls,
-    connections,
+    shapes,
     polygons,
     hero,
     none,
@@ -337,9 +337,9 @@ public:
       const auto ms = duration_cast<milliseconds<float>>(eye_.draw_hulls(overlay_));
       std::format_to(std::back_inserter(info_), " | hulls ({:5.3f} ms)", ms.count());
     } break;
-    case view::connections: {
-      const auto ms = duration_cast<milliseconds<float>>(eye_.draw_connections(overlay_));
-      std::format_to(std::back_inserter(info_), " | connections ({:5.3f} ms)", ms.count());
+    case view::shapes: {
+      const auto ms = duration_cast<milliseconds<float>>(eye_.draw_shapes(overlay_));
+      std::format_to(std::back_inserter(info_), " | shapes ({:5.3f} ms)", ms.count());
     } break;
     case view::polygons: {
       const auto ms = duration_cast<milliseconds<float>>(eye_.draw_polygons(overlay_));
@@ -385,8 +385,8 @@ public:
 
     // Draw demo border.
     if (demo_) {
-      cv::fillPoly(overlay_, demo_pause_[0], eye::scalar(0x000000A0), cv::LINE_AA);
-      cv::fillPoly(overlay_, demo_pause_[1], eye::scalar(0xC62828FF), cv::LINE_4);
+      cv::fillPoly(overlay_, demo_pause_[0], eye::scalar(0x000000A0), cv::LINE_AA);  // Black
+      cv::fillPoly(overlay_, demo_pause_[1], eye::scalar(0xC62828FF), cv::LINE_4);   // 800 Red
     }
 
     // Set overlay texture image.

@@ -77,7 +77,7 @@ public:
   clock::duration draw_contours(cv::Mat& overlay) noexcept;
   clock::duration draw_groups(cv::Mat& overlay) noexcept;
   clock::duration draw_hulls(cv::Mat& overlay) noexcept;
-  clock::duration draw_connections(cv::Mat& overlay) noexcept;
+  clock::duration draw_shapes(cv::Mat& overlay) noexcept;
   clock::duration draw_polygons(cv::Mat& overlay) noexcept;
 
   void draw(
@@ -112,27 +112,32 @@ private:
 
   cv::Mat scan_{ vw, vh, CV_8UC1 };
   std::uint64_t scan_hash_{ 0x00 };
-  clock::duration scan_duration_{};
 
   cv::Mat mask_{ vw, vh, CV_8UC1 };
   cv::cuda::GpuMat mask_data_{ vw, vh, CV_8UC1 };
   cv::cuda::GpuMat mask_view_{ vw, vh, CV_8UC1 };
-  clock::duration mask_duration_{};
 
   std::vector<polygon> contours_;
-  clock::duration contours_duration_{};
-  clock::duration groups_duration_{};
-  clock::duration hulls_duration_{};
-  clock::duration connections_duration_{};
-  clock::duration polygons_duration_{};
+  std::vector<cv::Vec4i> hierarchy_;
 
   std::vector<polygon> hulls_;
   bool hulls_ready_{ false };
 
+  cv::Mat shapes_{ vw, vh, CV_8UC1 };
+  cv::cuda::GpuMat shapes_data_{ vw, vh, CV_8UC1 };
+  cv::cuda::GpuMat shapes_view_{ vw, vh, CV_8UC1 };
+
   std::vector<polygon> polygons_;
   bool polygons_ready_{ false };
 
-  std::vector<cv::Vec4i> hierarchy_;
+  clock::duration scan_duration_{};
+  clock::duration mask_duration_{};
+  clock::duration contours_duration_{};
+  clock::duration groups_duration_{};
+  clock::duration hulls_duration_{};
+  clock::duration shapes_duration_{};
+  clock::duration polygons_duration_{};
+
   cv::cuda::GpuMat view_{ vw, vh, CV_8UC4 };
   cv::Ptr<cv::freetype::FreeType2> freetype_;
 };

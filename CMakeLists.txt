@@ -29,6 +29,10 @@ target_include_directories(eye PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(eye PRIVATE Boost::headers)
 target_link_libraries(eye PUBLIC CUDA::cudart)
 
+# Kill
+add_executable(kill src/kill.cpp src/main.manifest)
+target_compile_features(kill PRIVATE cxx_std_23)
+
 # Plugin
 file(GLOB_RECURSE headers src/horus/*.hpp)
 file(GLOB_RECURSE sources src/horus/*.cpp)
@@ -54,6 +58,8 @@ target_link_libraries(plugin PRIVATE SDL2::SDL2-static)
 target_link_libraries(plugin PRIVATE ${OpenCV_LIBS})
 target_link_libraries(plugin PRIVATE Boost::headers)
 target_link_libraries(plugin PRIVATE eye)
+
+add_custom_command(TARGET plugin PRE_BUILD COMMAND $<TARGET_FILE:kill>)
 
 set_target_properties(plugin PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY_DEBUG "C:/OBS/obs-plugins/64bit"

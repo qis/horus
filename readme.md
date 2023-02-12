@@ -27,35 +27,41 @@ harder and nobody has done this yet.
 ## How
 **Here is a short summary of what this plugin does.**
 
-Registers itself as a filter plygin in OBS and receives captured frames.
+1. Registers itself as a filter plygin in OBS and receives captured frames.
 
-![Frame](res/images/01-frame.png "Frame")
+   ![Frame](res/images/1-frame.png "Frame")
 
-Converts each frame to the HSV colorspace.
+2. Converts each frame to the HSV colorspace.
 
-![HSV](res/images/02-hsv.png "HSV")
+   ![HSV](res/images/2-hsv.png "HSV")
 
-Searches for colors that match enemy outlines and copies the data to system memory.
+3. Searches for colors that match enemy outlines and copies the data to system memory.
 
-![Scan](res/images/03-scan.png "Scan")
+   ![Scan](res/images/3-scan.png "Scan")
 
-Uses CUDA to mask and remove pixels that are likely player names, special effects, etc.
+4. Uses CUDA to mask and remove pixels that are likely player names, special effects, etc.
 
-![Mask](res/images/04-mask.png "Mask")
+   ![Mask](res/images/4-mask.png "Mask")
 
-Uses OpenCV to detect the remaining outlines as contours.
+5. Uses OpenCV to detect the remaining outlines as contours.
 
-![Contours](res/images/05-contours.png "Contours")
+   ![Contours](res/images/5-contours.png "Contours")
 
-Groups contours that likely belong to the same target.
+6. Groups contours that likely belong to the same target.
 
-![Groups](res/images/06-groups.png "Groups")
+   ![Groups](res/images/6-groups.png "Groups")
 
-Creates convex hulls as target representations.
+7. Creates convex hulls as target representations (see "Reaper" demo).
 
-![Hulls](res/images/07-hulls.png "Hulls")
+   ![Hulls](res/images/7-hulls.png "Hulls")
 
-Simulates mouse clicks when a target is under the cursor (with prediction).
+8. Uses CUDA to reduce the hull shape until it roughly matches the outlines.
+
+   ![Shapes](res/images/8-shapes.png "Shapes")
+
+9. Creates polygons as target representations (see "Ana" demo).
+
+   ![Polygons](res/images/9-polygons.png "Polygons")
 
 ## Demo
 Short clip that demonstrates the result.

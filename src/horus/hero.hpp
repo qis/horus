@@ -98,9 +98,12 @@ protected:
     return hid_.released(key);
   }
 
-  void mask(button button, std::chrono::milliseconds duration = std::chrono::milliseconds(0)) noexcept
+  void mask(
+    button button,
+    std::chrono::milliseconds duration = {},
+    std::chrono::steady_clock::duration delay = {}) noexcept
   {
-    hid_.mask(button, duration);
+    hid_.mask(button, duration, delay);
   }
 
   void move(std::int16_t x, std::int16_t y) noexcept

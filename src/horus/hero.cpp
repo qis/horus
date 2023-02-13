@@ -1,29 +1,24 @@
 #include "hero.hpp"
+#include <boost/circular_buffer.hpp>
+#include <algorithm>
 #include <format>
 #include <map>
+#include <numeric>
 #include <optional>
 
 namespace horus::hero {
 namespace {
 
-constexpr auto mf = 0.0442846f;
+using namespace std::chrono_literals;
 
-__forceinline std::pair<float, float> mouse2view(float mx, float my) noexcept
+constexpr auto mf = 0.0442846;
+
+__forceinline std::pair<double, double> mouse2view(double mx, double my) noexcept
 {
   return { mx * mf, my * mf };
 }
 
-__forceinline std::pair<float, float> mouse2view(const hid::mouse& movement, clock::time_point tp) noexcept
-{
-  constexpr milliseconds<float> fd{ 1000.0f / eye::fps };
-  const auto now = clock::now();
-  const auto sc = duration_cast<milliseconds<float>>(now - tp);
-  const auto md = duration_cast<milliseconds<float>>(now - movement.tp);
-  const auto mf = md / (fd > sc ? fd - sc : fd);
-  return mouse2view(movement.mx / mf, movement.my / mf);
-}
-
-constexpr std::pair<std::int16_t, std::int16_t> view2mouse(float mx, float my) noexcept
+constexpr std::pair<std::int16_t, std::int16_t> view2mouse(double mx, double my) noexcept
 {
   return { static_cast<std::int16_t>(mx / mf), static_cast<std::int16_t>(my / mf) };
 }
@@ -121,9 +116,53 @@ void connect_view_points(std::vector<cv::Point>& points, cv::Point p0, cv::Point
   }
 }
 
-}  // namespace
+class mouse_prediction {
+public:
+  mouse_prediction(std::size_t size) : va_(size) {}
 
-using namespace std::chrono_literals;
+  mouse_prediction(mouse_prediction&& other) = default;
+  mouse_prediction(const mouse_prediction& other) = default;
+  mouse_prediction& operator=(mouse_prediction&& other) = default;
+  mouse_prediction& operator=(const mouse_prediction& other) = default;
+  ~mouse_prediction() = default;
+
+  void update(const hid::mouse& mouse, clock::time_point tp, double vm = 4.2) noexcept
+  {
+    constexpr milliseconds<double> fd{ 1000.0 / eye::fps };
+    const auto now = clock::now();
+    const auto sc = duration_cast<milliseconds<double>>(now - tp);
+    const auto md = duration_cast<milliseconds<double>>(now - mouse.tp);
+    const auto mf = md / (fd > sc ? fd - sc : fd);
+    std::tie(vx_, vy_) = mouse2view(mouse.mx / mf, mouse.my / mf);
+    va_.push_back({ static_cast<int>(vx_ * vm), static_cast<int>(vy_ * vm) });
+  }
+
+  constexpr double vx() const noexcept
+  {
+    return vx_;
+  }
+
+  constexpr double vy() const noexcept
+  {
+    return vy_;
+  }
+
+  cv::Point va() const noexcept
+  {
+    if (va_.empty()) {
+      return { 0, 0 };
+    }
+    const auto size = static_cast<double>(va_.size());
+    return std::accumulate(va_.begin(), va_.end(), cv::Point(0, 0)) / size;
+  }
+
+private:
+  double vx_{ 0.0 };
+  double vy_{ 0.0 };
+  boost::circular_buffer<cv::Point> va_;
+};
+
+}  // namespace
 
 class ana : public base {
 public:
@@ -135,8 +174,6 @@ public:
   //   NANO BOOST REQUIRES TARGET CONFIRMATION: ON
   // + WEAPONS & ABILITIES
   //   PRIMARY FIRE: LEFT MOUSE BUTTON | MOUSE BUTTON 5
-
-  static constexpr auto prediction_multiplier = 2.5;
 
   ana(const boost::asio::any_io_executor& executor, eye& eye, hid& hid) noexcept :
     base(executor, eye, hid)
@@ -153,20 +190,21 @@ public:
     const auto& targets = eye_.polygons();
 
     // Update mouse movement.
-    std::tie(vx_, vy_) = mouse2view(movement(), tp);
-    vc_.x = eye::vc.x + static_cast<int>(vx_ * prediction_multiplier);
-    vc_.y = eye::vc.y + static_cast<int>(vy_ * prediction_multiplier);
+    mp_.update(movement(), tp);
+    vc_ = eye::vc + mp_.va();
 
     // Create points between mouse movement and center of view.
     connect_view_points(points_, vc_, eye::vc, 1);
 
     // Acquire target.
     target_ = true;
+    cv::Point vd(0, 0);
     for (const auto& target : eye_.polygons()) {
       const auto rect = cv::boundingRect(target);
       const auto margin = std::max(1.0, rect.width / 16.0);
       for (const auto& point : points_) {
         if (cv::pointPolygonTest(target, point, true) > margin) {
+          vd = vc_ - point;
           goto acquired;
         }
       }
@@ -186,13 +224,19 @@ public:
     } else if (pressed(button::right)) {
       lockout_ = now + 300ms;
     }
-    if (now < lockout_) {
+    if (now < lockout_ || !trigger_) {
       return true;
     }
 
     // Fire if a target was acquired.
-    if (target_ && trigger_) {
-      mask(button::up, 16ms);
+    if (target_) {
+      if (cv::norm(vd) > 1.0) {
+        const auto md = view2mouse(vd.x, vd.y);
+        move(md.first, md.second);
+        mask(button::up, 16ms, 16us);
+      } else {
+        mask(button::up, 16ms);
+      }
       lockout_ = now + 128ms;
     }
     return true;
@@ -205,19 +249,18 @@ public:
     if (trigger_) {
       eye_.draw(overlay, vc_, target_ ? 0xD50000FF : 0x00B0FFFF);
     }
-    std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", vx_, vy_);
+    std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mp_.vx(), mp_.vy());
     eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
     return false;
   }
 
 private:
-  float vx_{};
-  float vy_{};
   cv::Point vc_{};
-  bool target_{ false };
-  bool trigger_{ false };
+  mouse_prediction mp_{ 3 };
   std::vector<cv::Point> points_;
   clock::time_point lockout_{};
+  bool trigger_{ false };
+  bool target_{ false };
   std::string info_;
 };
 
@@ -435,7 +478,6 @@ public:
   //   PRIMARY FIRE: LEFT MOUSE BUTTON | MOUSE BUTTON 5
 
   static constexpr auto spread = 40.0;
-  static constexpr auto prediction_multiplier = 2.5;
   static constexpr auto draw_centroids = false;
 
   reaper(boost::asio::any_io_executor executor, eye& eye, hid& hid) noexcept :
@@ -455,18 +497,19 @@ public:
     const auto& targets = eye_.hulls();
 
     // Update mouse movement.
-    std::tie(vx_, vy_) = mouse2view(movement(), tp);
-    vc_.x = eye::vc.x + static_cast<int>(vx_ * prediction_multiplier);
-    vc_.y = eye::vc.y + static_cast<int>(vy_ * prediction_multiplier);
+    mp_.update(movement(), tp);
+    vc_ = eye::vc + mp_.va();
 
     // Create points between mouse movement and center of view.
     connect_view_points(points_, vc_, eye::vc, 1);
 
     // Acquire target.
     target_ = true;
+    cv::Point vd(0, 0);
     for (const auto& target : targets) {
       for (const auto& point : points_) {
         if (cv::pointPolygonTest(target, point, false) > 0.0) {
+          vd = vc_ - point;
           goto acquired;
         }
       }
@@ -491,19 +534,13 @@ public:
 
     // Adjust crosshair and fire.
     if (target_) {
-      if (std::abs(vx_) > 4.0f || std::abs(vy_) > 4.0f) {
-        auto vx = -vx_;
-        if (std::abs(vx) > 8) {
-          vx = vx < 0.0f ? -8.0f : 8.0f;
-        }
-        auto vy = -vy_;
-        if (std::abs(vy) > 8) {
-          vy = vy < 0.0f ? -8.0f : 8.0f;
-        }
-        const auto md = view2mouse(vx, vy);
+      if (cv::norm(vd) > 1.0) {
+        const auto md = view2mouse(vd.x, vd.y);
         move(md.first, md.second);
+        mask(button::up, 16ms, 16us);
+      } else {
+        mask(button::up, 16ms);
       }
-      mask(button::up, 16ms);
       lockout_ = now + 128ms;
     }
     return true;
@@ -521,7 +558,7 @@ public:
     if (trigger_) {
       eye_.draw(overlay, vc_, target_ ? 0xD50000FF : 0x00B0FFFF);
     }
-    std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", vx_, vy_);
+    std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mp_.vx(), mp_.vy());
     eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
     return false;
   }
@@ -535,13 +572,12 @@ public:
   }
 
 private:
-  float vx_{};
-  float vy_{};
   cv::Point vc_{};
-  bool target_{ false };
-  bool trigger_{ false };
+  mouse_prediction mp_{ 3 };
   std::vector<cv::Point> points_;
   clock::time_point lockout_{};
+  bool trigger_{ false };
+  bool target_{ false };
   std::string info_;
 };
 

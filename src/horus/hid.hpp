@@ -2,6 +2,7 @@
 #include "config.hpp"
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/udp.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <dinput.h>
 #include <dinputd.h>
 #include <array>
@@ -119,7 +120,11 @@ public:
     return previous(key) && !current(key);
   }
 
-  void mask(button button, std::chrono::milliseconds duration) noexcept;
+  void mask(
+    button button,
+    std::chrono::milliseconds duration = {},
+    std::chrono::steady_clock::duration delay = {}) noexcept;
+
   void move(std::int16_t x, std::int16_t y) noexcept;
 
 private:
@@ -157,6 +162,7 @@ private:
   std::uint64_t mouse_movement_{ 0 };
   std::atomic_uint64_t mouse_movement_shared_{ 0 };
 
+  boost::asio::steady_timer timer_;
   boost::asio::ip::udp::socket socket_;
   boost::asio::ip::udp::endpoint endpoint_;
   std::array<std::uint8_t, 4> data_{};

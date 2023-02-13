@@ -1,4 +1,5 @@
 #include "hid.hpp"
+#include <algorithm>
 
 #pragma comment(lib, "dinput8.lib")
 #pragma comment(lib, "dxguid.lib")
@@ -6,12 +7,14 @@
 namespace horus {
 namespace {
 
+using namespace std::chrono_literals;
+
 constexpr std::size_t keybd_state_size = 256;
 constexpr std::size_t mouse_state_size = sizeof(DIMOUSESTATE2);
 
 }  // namespace
 
-hid::hid(boost::asio::any_io_executor executor) noexcept : socket_(executor)
+hid::hid(boost::asio::any_io_executor executor) noexcept : timer_(executor), socket_(executor)
 {
   boost::system::error_code ec;
   socket_.open(boost::asio::ip::udp::v4(), ec);
@@ -149,12 +152,17 @@ bool hid::update() noexcept
   return true;
 }
 
-void hid::mask(button button, std::chrono::milliseconds duration = std::chrono::milliseconds(0)) noexcept
+void hid::mask(
+  button button,
+  std::chrono::milliseconds duration,
+  std::chrono::steady_clock::duration delay) noexcept
 {
-  if (duration < std::chrono::milliseconds(0)) {
-    duration = std::chrono::milliseconds(0);
-  } else if (duration > maximum_mask_duration) {
-    duration = maximum_mask_duration;
+  if (delay > std::chrono::steady_clock::duration(0)) {
+    timer_.expires_from_now(delay);
+    timer_.async_wait([this, button, duration](boost::system::error_code ec) noexcept {
+      mask(button, duration);
+    });
+    return;
   }
 
   switch (button) {
@@ -178,6 +186,7 @@ void hid::mask(button button, std::chrono::milliseconds duration = std::chrono::
     break;
   }
 
+  duration = std::clamp(duration, 0ms, std::chrono::milliseconds(maximum_mask_duration));
   const auto ms = static_cast<std::uint16_t>(duration.count());
   data_[1] = static_cast<std::uint8_t>((ms >> 8) & 0xFF);
   data_[2] = static_cast<std::uint8_t>((ms >> 0) & 0xFF);
@@ -188,7 +197,7 @@ void hid::mask(button button, std::chrono::milliseconds duration = std::chrono::
     if (ec != boost::system::errc::resource_unavailable_try_again) {
       break;
     }
-    std::this_thread::sleep_for(std::chrono::microseconds(1));
+    std::this_thread::sleep_for(1us);
   }
 }
 
@@ -205,7 +214,7 @@ void hid::move(std::int16_t x, std::int16_t y) noexcept
     if (ec != boost::system::errc::resource_unavailable_try_again) {
       break;
     }
-    std::this_thread::sleep_for(std::chrono::microseconds(1));
+    std::this_thread::sleep_for(1us);
   }
 }
 

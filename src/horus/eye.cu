@@ -160,7 +160,7 @@ __global__ void mask_draw(const uchar* data, size_t data_step, uchar* view, size
 }
 
 // Sets shapes values to:
-// - 0x00 if they are border pixels.
+// - 0x00 if they are padding pixels.
 // - 0x02 if they are near a 0x01 value.
 __global__ void shapes_dilate(uchar* data, size_t step)
 {

@@ -161,8 +161,8 @@ public:
       fg.emplace_back(x + w - 1, y + h - 1);
       bg.emplace_back(x, y + h);
       fg.emplace_back(x + 1, y + h - 1);
-      demo_pause_[0].push_back(bg);
-      demo_pause_[1].push_back(fg);
+      pause_icon_[0].push_back(bg);
+      pause_icon_[1].push_back(fg);
       x += w + 2;
     }
   }
@@ -208,7 +208,7 @@ public:
     }
 
     // Render target video source to frame texture (15 μs).
-    if (!demo_) {
+    if (!pause_) {
       if (!gs_texrender_begin(texrender_frame_, eye::sw, eye::sh)) {
         obs_source_skip_video_filter(source_);
         return;
@@ -341,24 +341,24 @@ public:
       break;
     }
 
-    // Handle demo requests.
-    if (demo_toggle_.exchange(false)) {
-      demo_ = !demo_;
+    // Handle pause toggle requests.
+    if (pause_toggle_.exchange(false)) {
+      pause_ = !pause_;
     }
 
     // Reset texture renderers.
     gs_texrender_reset(texrender_scan_);
-    if (!demo_) {
+    if (!pause_) {
       gs_texrender_reset(texrender_frame_);
     }
 
     // Draw info text.
     eye_.draw(overlay_, { 2, eye::vh - 20 }, info_);
 
-    // Draw demo border.
-    if (demo_) {
-      cv::fillPoly(overlay_, demo_pause_[0], eye::scalar(0x000000A0), cv::LINE_AA);  // Black
-      cv::fillPoly(overlay_, demo_pause_[1], eye::scalar(0xC62828FF), cv::LINE_4);   // 800 Red
+    // Draw pause icon.
+    if (pause_) {
+      cv::fillPoly(overlay_, pause_icon_[0], eye::scalar(0x000000A0), cv::LINE_AA);  // Black
+      cv::fillPoly(overlay_, pause_icon_[1], eye::scalar(0xC62828FF), cv::LINE_4);   // 800 Red
     }
 
     // Set overlay texture image.
@@ -374,7 +374,7 @@ public:
     if (obs_source_process_filter_begin(source_, GS_RGBA, OBS_ALLOW_DIRECT_RENDERING)) {
       gs_blend_state_push();
       gs_blend_function(GS_BLEND_ONE, GS_BLEND_INVSRCALPHA);
-      if (demo_) {
+      if (pause_) {
         gs_effect_set_texture(draw_effect_frame_, frame);
       }
       gs_effect_set_texture(draw_effect_overlay_, overlay_texture_);
@@ -423,8 +423,8 @@ private:
       if (!hid_.update()) {
         continue;
       }
-      if (hid_.pressed(key::f7)) {
-        demo_toggle_.store(true, std::memory_order_release);
+      if (hid_.pressed(key::f6)) {
+        screenshot_.store(true, std::memory_order_release);
       } else if (hid_.pressed(key::f9)) {
         hero_ = hero::next_damage_hero(executor, hero_, eye_, hid_);
         announce(hero_->name());
@@ -441,7 +441,7 @@ private:
             (static_cast<int>(view::none) + 1)),
           std::memory_order_release);
       } else if (hid_.pressed(key::pause)) {
-        screenshot_.store(true, std::memory_order_release);
+        pause_toggle_.store(true, std::memory_order_release);
       }
       if (const auto hero = hero_) {
         if (focus_.load(std::memory_order_acquire)) {
@@ -540,9 +540,9 @@ private:
   clock::duration scan_duration_{};
   float scan_duration_ms_{ std::numeric_limits<float>::quiet_NaN() };
 
-  bool demo_{ false };
-  std::array<std::vector<eye::polygon>, 2> demo_pause_;
-  std::atomic_bool demo_toggle_{ false };
+  bool pause_{ false };
+  std::array<std::vector<eye::polygon>, 2> pause_icon_;
+  std::atomic_bool pause_toggle_{ false };
 
   std::atomic_bool screenshot_{ false };
   std::atomic_size_t screenshot_index_{ 0 };

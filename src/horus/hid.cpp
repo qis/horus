@@ -7,8 +7,6 @@
 namespace horus {
 namespace {
 
-using namespace std::chrono_literals;
-
 constexpr std::size_t keybd_state_size = 256;
 constexpr std::size_t mouse_state_size = sizeof(DIMOUSESTATE2);
 

@@ -197,8 +197,6 @@ public:
 
   void render() noexcept
   {
-    using namespace std::chrono_literals;
-
     // Get frame time point.
     const auto tp0 = clock::now();
 
@@ -521,7 +519,6 @@ private:
 
   std::thread focus_thread_;
   boost::asio::io_context focus_context_{ 1 };
-  hero::timer focus_timer_{ focus_context_ };
   std::atomic_bool focus_{ false };
 
   std::thread hid_thread_;

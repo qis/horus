@@ -12,6 +12,8 @@
 
 namespace horus {
 
+using namespace std::chrono_literals;
+
 using clock = std::chrono::high_resolution_clock;
 
 using std::chrono::nanoseconds;

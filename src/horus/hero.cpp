@@ -9,8 +9,6 @@
 namespace horus::hero {
 namespace {
 
-using namespace std::chrono_literals;
-
 constexpr auto mf = 0.0442846;
 
 __forceinline std::pair<double, double> mouse2view(double mx, double my) noexcept

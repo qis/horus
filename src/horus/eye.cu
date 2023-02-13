@@ -7,6 +7,8 @@
 #include <numeric>
 #include <cassert>
 
+#define SHAPES_FILTER_FAST 0
+
 namespace horus {
 namespace {
 
@@ -32,8 +34,8 @@ __global__ void mask_filter(uchar* data, size_t step)
   auto si = di - step * r - r;
   for (auto i = 0; i < d; i++) {
     for (auto j = 0; j < d; j++) {
-      const auto sv = *si++;
-      if (sv && ++neighbors > 9) {
+      const auto sc = *si++;
+      if (sc && ++neighbors > 9) {
         *di = 0x02;
         return;
       }
@@ -77,8 +79,8 @@ __global__ void mask_dilate(uchar* data, size_t step)
   auto si = di - step * r - r;
   for (auto i = 0; i < d; i++) {
     for (auto j = 0; j < d; j++) {
-      const auto sv = *si++;
-      if (sv == 0x02) {
+      const auto sc = *si++;
+      if (sc == 0x02) {
         *di = 0x04;
         return;
       }
@@ -105,8 +107,8 @@ __global__ void mask_erode(uchar* data, size_t step)
   auto si = di - step * r - r;
   for (auto i = 0; i < d; i++) {
     for (auto j = 0; j < d; j++) {
-      const auto sv = *si++;
-      if (sv & 0x01) {
+      const auto sc = *si++;
+      if (sc & 0x01) {
         *di |= 0x01;
         return;
       }
@@ -209,6 +211,7 @@ __global__ void shapes_mask(uchar* data, size_t step, const uchar* mask, size_t 
 // Sets shapes values to:
 // - 0x02 if they are 0x01 and should be filtered.
 // - 0x03 if they are 0x01 and are a filtered border.
+#if SHAPES_FILTER_FAST
 __global__ void shapes_filter(uchar* data, size_t step)
 {
   constexpr auto r = 1;
@@ -227,9 +230,9 @@ __global__ void shapes_filter(uchar* data, size_t step)
   auto si = di - r * step - r;
   for (auto i = 0; i < d; i++) {
     for (auto j = 0; j < d; j++) {
-      const auto sv = *si++;
-      filter |= !sv || (sv & 0x02) != 0x00;
-      border |= sv > 0x02;
+      const auto sc = *si++;
+      filter |= !sc || (sc & 0x02) != 0x00;
+      border |= sc > 0x02;
     }
     si += step - d;
   }
@@ -237,6 +240,45 @@ __global__ void shapes_filter(uchar* data, size_t step)
     *di = border ? 0x03 : 0x02;
   }
 }
+#else
+__global__ void shapes_filter(uchar* data, size_t step)
+{
+  constexpr auto r = 1;
+  constexpr auto d = r * 2 + 1;
+  const auto x = blockIdx.x * blockDim.x + threadIdx.x;
+  const auto y = blockIdx.y * blockDim.y + threadIdx.y;
+  if (x < r || x >= eye::vw - r || y < r || y >= eye::vh - r) {
+    return;
+  }
+  const auto di = data + y * step + x;
+  if (*di != 0x01) {
+    return;
+  }
+  auto filter = 0;
+  auto border = 0;
+  auto si = di - r * step - r;
+  const auto sv = *si;
+  for (auto i = 0; i < d; i++) {
+    for (auto j = 0; j < d; j++) {
+      const auto sc = *si++;
+      if (filter < 2) {
+        if (!sc || (sc & 0x02) != 0x00) {
+          ++filter;
+        } else {
+          filter = 0;
+        }
+      }
+      if (sc > 0x02) {
+        ++border;
+      }
+    }
+    si += step - d;
+  }
+  if (filter > 1 || (filter == 1 && (!sv || (sv & 0x02) != 0x00))) {
+    *di = border > 1 ? 0x03 : 0x02;
+  }
+}
+#endif
 
 // Sets shapes values to:
 // - 0x03 if they are 0x01 and have a 0x03 neighbor.
@@ -468,10 +510,10 @@ const std::vector<eye::polygon>& eye::polygons() noexcept
   shapes_mask<<<grid, block>>>(shapes_data_.data, shapes_data_.step, mask_data_.data, mask_data_.step);
   assert(cudaGetLastError() == cudaSuccess);
   for (auto i = 0; i < 16; i++) {
-    shapes_filter<<<grid, block>>>(shapes_data_.data, shapes_data_.step);
-    assert(cudaGetLastError() == cudaSuccess);
-    shapes_filter<<<grid, block>>>(shapes_data_.data, shapes_data_.step);
-    assert(cudaGetLastError() == cudaSuccess);
+    for (auto j = 0; j < 4; j++) {
+      shapes_filter<<<grid, block>>>(shapes_data_.data, shapes_data_.step);
+      assert(cudaGetLastError() == cudaSuccess);
+    }
     shapes_close<<<grid, block>>>(shapes_data_.data, shapes_data_.step);
     assert(cudaGetLastError() == cudaSuccess);
   }

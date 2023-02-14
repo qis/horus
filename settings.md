@@ -150,6 +150,17 @@ Project > Render...
     GOP: 30 frame(s) | ☑ Fixed
 ```
 
+1. Record videos in OBS.
+2. Create new project in Kdenlive.
+3. Import and edit vodeos.
+   * Add "Obscure" effect to cover the player name.
+   * Add "Motion Tracker" effect to cover the chat and eliminations feed.
+4. Render video with the "HEVC" preset.
+5. Create new project in Kdenlive.
+6. Change project settings to the "HD 1080p 60 fps" preset.
+7. Import rendered video.
+8. Render video with the "HEVC 2560x1440" preset.
+
 ## Overwatch
 When using a different resolution, adjust [res/draw.effect](res/draw.effect)
 and [src/horus/eye.hpp](src/horus/eye.hpp).

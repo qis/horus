@@ -1,8 +1,11 @@
 # Horus
-OBS plugin for Overwatch enemy detection using OpenCV and CUDA in under 3 milliseconds.
+OBS plugin for Overwatch enemy detection using OpenCV and CUDA.
+
+* Detects enemy hulls in 1.3 - 3.0 ms.
+* Detects enemy polygons in 2.1 - 6.1 ms.
 
 At 120 FPS, the total delay between mouse movement recognized by the system (DirectInput)
-and new enemy positions recognized by the plugin ranges between 0.6 and 13.6 ms.
+and new enemy positions recognized by the plugin ranges between 1.3 and 14.4 ms.
 
 ## Why
 This is a hobby. I write cheats for games once every few years.
@@ -25,56 +28,61 @@ Detecting this solution without limiting the use of legitimate software like OBS
 harder and nobody has done this yet.
 
 ## How
-**Here is a short summary of what this plugin does.**
+Short summary of what this plugin does.
 
 1. Registers itself as a filter plygin in OBS and receives captured frames.
 
-   ![Frame](res/images/1-frame.png "Frame")
+   ![Frame](res/images/0.2.0/1-frame.png "Frame")
 
 2. Converts each frame to the HSV colorspace.
 
-   ![HSV](res/images/2-hsv.png "HSV")
+   ![HSV](res/images/0.2.0/2-hsv.png "HSV")
 
 3. Searches for colors that match enemy outlines and copies the data to system memory.
 
-   ![Scan](res/images/3-scan.png "Scan")
+   ![Scan](res/images/0.2.0/3-scan.png "Scan")
 
 4. Uses CUDA to mask and remove pixels that are likely player names, special effects, etc.
 
-   ![Mask](res/images/4-mask.png "Mask")
+   ![Mask](res/images/0.2.0/4-mask.png "Mask")
 
 5. Uses OpenCV to detect the remaining outlines as contours.
 
-   ![Contours](res/images/5-contours.png "Contours")
+   ![Contours](res/images/0.2.0/5-contours.png "Contours")
 
 6. Groups contours that likely belong to the same target.
 
-   ![Groups](res/images/6-groups.png "Groups")
+   ![Groups](res/images/0.2.0/6-groups.png "Groups")
 
 7. Creates convex hulls as target representations (see "Reaper" demo).
 
-   ![Hulls](res/images/7-hulls.png "Hulls")
+   ![Hulls](res/images/0.2.0/7-hulls.png "Hulls")
 
 8. Uses CUDA to reduce the hull shape until it roughly matches the outlines.
 
-   ![Shapes](res/images/8-shapes.png "Shapes")
+   ![Shapes](res/images/0.2.0/8-shapes.png "Shapes")
 
 9. Creates polygons as target representations (see "Ana" demo).
 
-   ![Polygons](res/images/9-polygons.png "Polygons")
+   ![Polygons](res/images/0.2.0/9-polygons.png "Polygons")
 
 ## Demo
-Short clip that demonstrates the result.
+Short videos that demonstrate the result.
 
-[![Reaper](res/images/demos/reaper.jpg)](https://youtu.be/QO6qQR8j-lU "Reaper")
+### Reaper
+Hitscan characters with a wide weapon spread use target hulls.
+
+[![Reaper](res/images/0.1.0/v-reaper.jpg)](https://youtu.be/_O7rU6WY4Bw "Reaper")
 
 ## Next
 This is a simple demo and many things can be improved. The following features will be added
 in the future when I have time.
 
-* Filter world ping icons.
-* Track targets to predict their movement in 3D space.
+* Filter out world ping icons.
+* Use names and health bars to group contours.
+* Track targets and their movement in 3D space.
 * Train a neural network to categorize the targets.
+* Calculate distance based on target category and polygon size.
 
 ## Build
 This repository exists for demonstration purposes only. Build instructions are for the author's convenience.

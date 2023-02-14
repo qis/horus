@@ -46,8 +46,8 @@ Configure OBS (the `Output` and `Audio` settings are optional).
 + Audio
   + Global Audio Devices
     Mic/Auxilary Audio: Microphone
-  + Hotkeys
-    Mic/Aux ☑ Enable Push-to-talk
+  + Hotkeys > Mic/Aux
+    ☑ Enable Push-to-talk
     Push-to-talk delay: 0ms
 + Video
   Base (Canvas) Resolution: 1920x1080
@@ -124,24 +124,31 @@ Settings > Configure Kdenlive...
   Timeline Preview: x264-nvenc
 Project > Render...
 + Presets > Create new preset
+  Group: Lossless/HQ
+  Preset name: HEVC
+  Container: matroska
   + Video
-    Group: Lossless/HQ
-    Preset name: YouTube 1080p60
-    Container: mp4
-    ☑ Resolution: 2560 x 1440
-    ☑ Frame Rate: 60/1
     ☑ Scanning: Progressive
     Codec: hevc_nvenc
-    Rate Control: Average Bitrate
-    ☑ Bitrate: 60000k
-    GOP: 30 frame(s)
+    Rate Control: VBR - Variable Bitrate
+    Quality: 0
+    GOP: 60 frame(s) | ☑ Fixed
     B Frames: 2 frame(s)
   + Audio
     ☑ Channels: 2 (stereo)
     Codec: aac
-    ☑ Sample Rate: 48000 Hz
+    ☑ Sample Rate: 48000
     Rate Control: CBR - Constant Bitrate
     Bitrate: 160k
++ Presets > HEVC > Save current preset as new custom preset
+  Preset name: HEVC 1440p60
+  Container: mp4
+  + Video
+    ☑ Resolution: 2560 x 1440
+    ☑ Frame Rate: 60/1
+    Rate Control: Average Bitrate
+    ☑ Bitrate: 60000k
+    GOP: 30 frame(s) | ☑ Fixed
 ```
 
 ## Overwatch

@@ -54,7 +54,7 @@ Short summary of what this plugin does.
 
    ![Groups](res/images/0.2.0/6-groups.png "Groups")
 
-7. Creates convex hulls as target representations (see "Reaper" demo).
+7. Creates convex hulls as target representations.
 
    ![Hulls](res/images/0.2.0/7-hulls.png "Hulls")
 
@@ -62,7 +62,7 @@ Short summary of what this plugin does.
 
    ![Shapes](res/images/0.2.0/8-shapes.png "Shapes")
 
-9. Creates polygons as target representations (see "Ana" demo).
+9. Creates polygons as target representations.
 
    ![Polygons](res/images/0.2.0/9-polygons.png "Polygons")
 

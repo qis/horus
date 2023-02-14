@@ -67,6 +67,10 @@ Short summary of what this plugin does.
    ![Polygons](res/images/0.2.0/9-polygons.png "Polygons")
 
 ## Demo
+Hitscan characters with a narrow weapon spread use target polygons.
+
+[![Ana](res/images/0.2.0/v-ana.jpg)](https://youtu.be/pdcrDl4ajY4 "Ana")
+
 Hitscan characters with a wide weapon spread use target hulls.
 
 [![Reaper](res/images/0.1.0/v-reaper.jpg)](https://youtu.be/_O7rU6WY4Bw "Reaper")

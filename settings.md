@@ -141,11 +141,10 @@ Project > Render...
     Rate Control: CBR - Constant Bitrate
     Bitrate: 160k
 + Presets > HEVC > Save current preset as new custom preset
-  Preset name: HEVC 1440p60
+  Preset name: HEVC 2560x1440
   Container: mp4
   + Video
     ☑ Resolution: 2560 x 1440
-    ☑ Frame Rate: 60/1
     Rate Control: Average Bitrate
     ☑ Bitrate: 60000k
     GOP: 30 frame(s) | ☑ Fixed

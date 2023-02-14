@@ -3,8 +3,8 @@
 101 ICON "main.ico"
 
 VS_VERSION_INFO VERSIONINFO
-  PRODUCTVERSION 0, 2, 0, 0
-  FILEVERSION    0, 2, 0, 0
+  PRODUCTVERSION 0, 3, 0, 0
+  FILEVERSION    0, 3, 0, 0
   FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
 #ifndef NDEBUG
   FILEFLAGS VS_FF_DEBUG
@@ -19,7 +19,7 @@ BEGIN
       VALUE "FileDescription",  "horus"
       VALUE "ProductName",      "Horus"
       VALUE "LegalCopyright",   "Alexej Harm"
-      VALUE "ProductVersion",   "0.2.0"
+      VALUE "ProductVersion",   "0.3.0"
     END
   END
   BLOCK "VarFileInfo"

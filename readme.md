@@ -67,9 +67,6 @@ Short summary of what this plugin does.
    ![Polygons](res/images/0.2.0/9-polygons.png "Polygons")
 
 ## Demo
-Short videos that demonstrate the result.
-
-### Reaper
 Hitscan characters with a wide weapon spread use target hulls.
 
 [![Reaper](res/images/0.1.0/v-reaper.jpg)](https://youtu.be/_O7rU6WY4Bw "Reaper")

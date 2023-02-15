@@ -83,24 +83,24 @@ IncludeCategories:
 
     # Windows Core Headers
   - Regex: '^<(ntifs|windows)\.h>'
-    Priority: 3
+    Priority: 5
 
     # Windows Driver Headers
   - Regex: '^<(ntddk|wdm)\.h>'
-    Priority: 4
+    Priority: 6
 
     # Windows Headers
   - Regex: '^<(wdf|shellapi|winsock2|ws2tcpip|mswsock)\.h>'
-    Priority: 5
+    Priority: 7
 
     # GTest Headers
   - Regex: '^<(gtest|gmock)/'
-    Priority: 6
+    Priority: 4
     SortPriority: 0
 
     # Library Headers
   - Regex: '^<.*\.'
-    Priority: 7
+    Priority: 3
 
     # C Compatibility Headers
   - Regex: '^<c(a|c|e|f|i|l|m|s|t|u|w)'

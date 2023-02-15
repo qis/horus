@@ -1,16 +1,10 @@
 #pragma once
 #include <horus/eye.hpp>
 #include <horus/hid.hpp>
-#include <boost/asio/as_tuple.hpp>
-#include <boost/asio/co_spawn.hpp>
-#include <boost/asio/detached.hpp>
+#include <horus/timer.hpp>
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/steady_timer.hpp>
 
 namespace horus::hero {
-
-using token = decltype(boost::asio::as_tuple(boost::asio::use_awaitable));
-using timer = decltype(token::as_default_on(boost::asio::steady_timer({})));
 
 class base {
 public:

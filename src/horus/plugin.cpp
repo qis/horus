@@ -1,70 +1,18 @@
+#include <horus/game.hpp>
 #include <horus/hero.hpp>
 #include <horus/obs.hpp>
 #include <horus/sound.hpp>
-#include <boost/asio/signal_set.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
 #include <boost/asio/thread_pool.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <atomic>
-#include <filesystem>
 #include <format>
 #include <mutex>
 #include <thread>
 #include <cstdio>
 
-// OBS Settings > Output > Recording
-// Output Mode: Advanced
-// Type: Standard
-// Recording Format: mkv
-// Audio Track: [x] 1
-// Encoder: NVIDIA NVENC H.264
-// Rescale Output: [ ]
-// Rate Control: VBR
-// Bitrate: 16000 Kbps
-// Max Bitrate: 48000 Kbps
-// Keyframe Interval (seconds, 0=auto): 0
-// Preset: Quality
-// Profile: high
-// [ ] Look-ahead
-// [x] Psycho Visual Tuning
-// GPU: 0
-// Max B-frames: 2
-
 namespace horus {
-namespace {
-
-void announce(const char* name) noexcept
-{
-  static std::mutex mutex;
-  static sound hero_sound;
-  const auto filename = std::format("C:/OBS/horus/res/sounds/hero/{}.wav", name);
-  if (std::filesystem::is_regular_file(filename)) {
-    std::lock_guard lock{ mutex };
-    hero_sound = { filename.data() };
-    hero_sound.play();
-  }
-}
-
-boost::asio::awaitable<void> monitor_focus(std::atomic_bool& focus) noexcept
-{
-  const auto executor = co_await boost::asio::this_coro::executor;
-  hero::timer timer{ executor };
-  HWND game = nullptr;
-  clock::time_point update{};
-  while (true) {
-    timer.expires_from_now(std::chrono::milliseconds(100));
-    if (const auto [ec] = co_await timer.async_wait(); ec) {
-      co_return;
-    }
-    if (const auto now = clock::now(); now > update) {
-      game = FindWindow("TankWindowClass", "Overwatch");
-      update = now + std::chrono::seconds(1);
-    }
-    focus.store(game ? game == GetForegroundWindow() : false, std::memory_order_release);
-  }
-  co_return;
-}
-
-}  // namespace
 
 class plugin {
 public:
@@ -134,7 +82,7 @@ public:
 
     obs_leave_graphics();
 
-    boost::asio::co_spawn(focus_context_, monitor_focus(focus_), boost::asio::detached);
+    boost::asio::co_spawn(focus_context_, game::monitor(focus_), boost::asio::detached);
     focus_thread_ = std::thread([this]() noexcept {
       boost::system::error_code ec;
       focus_context_.run(ec);
@@ -257,6 +205,11 @@ public:
 
     // Process hero.
     if (const auto hero = hero_; !hero || !hero->scan(tp0)) {
+      if (view_ == view::hulls) {
+        eye_.hulls();
+      } else if (view_ == view::polygons) {
+        eye_.polygons();
+      }
       hid_.movement();
     }
 
@@ -293,8 +246,7 @@ public:
     // Draw overlay.
     overlay_hsv_ = false;
     overlay_desaturate_ = true;
-    const auto view_setting = draw.load(std::memory_order_acquire);
-    switch (view_setting) {
+    switch (view_) {
     case view::hsv:
       info_.append(" | hsv");
       overlay_desaturate_ = false;
@@ -344,6 +296,10 @@ public:
     // Handle pause toggle requests.
     if (pause_toggle_.exchange(false)) {
       pause_ = !pause_;
+      if (pause_ && gs_stagesurface_map(scan_stagesurf_, &data, &step)) {
+        cv::imwrite("C:/OBS/images/scan.png", cv::Mat(eye::sw, eye::sh, CV_8UC1, data, step));
+        gs_stagesurface_unmap(scan_stagesurf_);
+      }
     }
 
     // Reset texture renderers.
@@ -390,9 +346,9 @@ public:
     }
 
     // Update view setting.
-    if (view_ != view_setting) {
-      obs_data_set_int(settings_, "view", static_cast<int>(view_setting));
-      view_ = view_setting;
+    if (const auto view = draw.load(std::memory_order_acquire); view != view_) {
+      obs_data_set_int(settings_, "view", static_cast<int>(view));
+      view_ = view;
     }
 
     // Update frame counter.
@@ -414,7 +370,7 @@ private:
   boost::asio::awaitable<void> monitor() noexcept
   {
     const auto executor = co_await boost::asio::this_coro::executor;
-    hero::timer timer{ executor };
+    timer timer{ executor };
     while (true) {
       timer.expires_from_now(std::chrono::milliseconds(1));
       if (const auto [ec] = co_await timer.async_wait(); ec) {
@@ -425,6 +381,14 @@ private:
       }
       if (hid_.pressed(key::f6)) {
         screenshot_.store(true, std::memory_order_release);
+      } else if (hid_.pressed(key::f7)) {
+        constexpr auto size = static_cast<int>(view::none) + 1;
+        const auto data = static_cast<int>(draw.load(std::memory_order_relaxed));
+        draw.store(static_cast<view>((data + size - 1) % size), std::memory_order_release);
+      } else if (hid_.pressed(key::f8)) {
+        constexpr auto size = static_cast<int>(view::none) + 1;
+        const auto data = static_cast<int>(draw.load(std::memory_order_relaxed));
+        draw.store(static_cast<view>((data + 1) % size), std::memory_order_release);
       } else if (hid_.pressed(key::f9)) {
         hero_ = hero::next_damage_hero(executor, hero_, eye_, hid_);
         announce(hero_->name());
@@ -434,12 +398,6 @@ private:
       } else if (hid_.pressed(key::f11) && hero_) {
         hero_.reset();
         announce("none");
-      } else if (hid_.pressed(key::f12)) {
-        draw.store(
-          static_cast<view>(
-            (static_cast<int>(draw.load(std::memory_order_relaxed)) + 1) %
-            (static_cast<int>(view::none) + 1)),
-          std::memory_order_release);
       } else if (hid_.pressed(key::pause)) {
         pause_toggle_.store(true, std::memory_order_release);
       }
@@ -509,6 +467,7 @@ private:
   gs_eparam_t* draw_effect_overlay_{ nullptr };
   gs_eparam_t* draw_effect_desaturate_{ nullptr };
   gs_eparam_t* draw_effect_hsv_{ nullptr };
+  bool draw_{ false };
 
   cv::Mat overlay_{ eye::vw, eye::vh, CV_8UC4 };
   gs_texture_t* overlay_texture_{ nullptr };
@@ -549,35 +508,6 @@ private:
   gs_stagesurf_t* screenshot_stagesurf_{ nullptr };
   boost::asio::thread_pool screenshot_thread_pool_{ 1 };
 };
-
-boost::asio::awaitable<void> monitor(const std::atomic_bool& focus) noexcept
-{
-  auto executor = co_await boost::asio::this_coro::executor;
-  std::shared_ptr<hero::base> hero;
-  hero::timer timer{ executor };
-  hid hid{ executor };
-  eye eye;
-  while (true) {
-    timer.expires_from_now(std::chrono::milliseconds(1));
-    if (const auto [ec] = co_await timer.async_wait(); ec) {
-      co_return;
-    }
-    hid.update();
-    if (hid.pressed(key::f9)) {
-      hero = hero::next_damage_hero(executor, hero, eye, hid);
-      announce(hero->name());
-      std::puts(hero->name());
-    } else if (hid.pressed(key::f10)) {
-      hero = hero::next_support_hero(executor, hero, eye, hid);
-      announce(hero->name());
-      std::puts(hero->name());
-    }
-    if (hero && focus.load(std::memory_order_acquire)) {
-      co_await hero->update();
-    }
-  }
-  co_return;
-}
 
 }  // namespace horus
 
@@ -667,40 +597,5 @@ MODULE_EXPORT bool obs_module_load()
 }
 
 MODULE_EXPORT void obs_module_unload() {}
-
-MODULE_EXPORT int horus_main(int argc, char* argv[])
-{
-  int success = EXIT_SUCCESS;
-  try {
-    boost::asio::io_context context{ 1 };
-    boost::asio::signal_set signals{ context, SIGINT, SIGTERM };
-    signals.async_wait([&](boost::system::error_code ec, int count) noexcept {
-      context.stop();
-    });
-
-    std::atomic_bool focus{ false };
-    boost::asio::io_context focus_context{ 1 };
-    boost::asio::co_spawn(focus_context, horus::monitor_focus(focus), boost::asio::detached);
-    auto focus_thread = std::thread([&]() noexcept {
-      boost::system::error_code ec;
-      focus_context.run(ec);
-    });
-
-    boost::asio::co_spawn(context, horus::monitor(focus), boost::asio::detached);
-    context.run();
-
-    if (focus_thread.joinable()) {
-      focus_context.stop();
-      focus_thread.join();
-    }
-  }
-  catch (const std::exception& e) {
-    std::fputs(e.what(), stderr);
-    std::fputs("\r\n", stderr);
-    std::fflush(stderr);
-    success = EXIT_FAILURE;
-  }
-  return success;
-}
 
 }  // extern "C"

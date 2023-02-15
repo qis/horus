@@ -563,7 +563,7 @@ public:
 
   boost::asio::awaitable<void> update() noexcept override
   {
-    if (pressed(key::f8)) {
+    if (pressed(key::f12)) {
       move(700, 0);
     }
     co_return;

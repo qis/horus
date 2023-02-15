@@ -29,54 +29,46 @@ target_include_directories(eye PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(eye PRIVATE Boost::headers)
 target_link_libraries(eye PUBLIC CUDA::cudart)
 
-# Kill
-add_executable(kill src/kill.cpp src/main.manifest)
-target_compile_features(kill PRIVATE cxx_std_23)
-
-# Plugin
+# Horus
 file(GLOB_RECURSE headers src/horus/*.hpp)
 file(GLOB_RECURSE sources src/horus/*.cpp)
 
-add_library(plugin SHARED ${headers} ${sources} src/main.manifest)
-target_compile_features(plugin PRIVATE cxx_std_23)
-target_include_directories(plugin PRIVATE src)
+add_library(horus SHARED ${headers} ${sources} src/demo.cpp src/main.manifest)
+target_compile_features(horus PRIVATE cxx_std_23)
+target_include_directories(horus PRIVATE src)
 
-set_target_properties(plugin PROPERTIES
-  INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
-  OUTPUT_NAME horus)
+set_target_properties(horus PROPERTIES
+  INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
 
-target_compile_definitions(plugin PRIVATE HORUS_EXPORTS)
-target_compile_definitions(plugin PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-target_compile_definitions(plugin PRIVATE WINVER=0x0A00 _WIN32_WINNT=0x0A00)
-target_compile_definitions(plugin PRIVATE DIRECTINPUT_VERSION=0x0800)
-target_compile_options(plugin PRIVATE /permissive- /FC /MP16)
+target_compile_definitions(horus PRIVATE HORUS_EXPORTS)
+target_compile_definitions(horus PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_definitions(horus PRIVATE WINVER=0x0A00 _WIN32_WINNT=0x0A00)
+target_compile_definitions(horus PRIVATE DIRECTINPUT_VERSION=0x0800)
+target_compile_options(horus PRIVATE /permissive- /FC /MP16)
 
-target_compile_definitions(plugin PRIVATE BOOST_MATH_STANDALONE=1)
-target_include_directories(plugin PRIVATE ${OpenCV_INCLUDE_DIRS})
-target_include_directories(plugin PRIVATE "C:/OBS/src/libobs")
-target_link_libraries(plugin PRIVATE SDL2::SDL2-static)
-target_link_libraries(plugin PRIVATE ${OpenCV_LIBS})
-target_link_libraries(plugin PRIVATE Boost::headers)
-target_link_libraries(plugin PRIVATE eye)
+target_compile_definitions(horus PRIVATE BOOST_MATH_STANDALONE=1)
+target_include_directories(horus PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_include_directories(horus PRIVATE "C:/OBS/src/libobs")
+target_link_libraries(horus PRIVATE SDL2::SDL2-static)
+target_link_libraries(horus PRIVATE ${OpenCV_LIBS})
+target_link_libraries(horus PRIVATE Boost::headers)
+target_link_libraries(horus PRIVATE eye)
 
-add_custom_command(TARGET plugin PRE_BUILD COMMAND $<TARGET_FILE:kill>)
-
-set_target_properties(plugin PROPERTIES
+set_target_properties(horus PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY_DEBUG "C:/OBS/obs-plugins/64bit"
   RUNTIME_OUTPUT_DIRECTORY_RELEASE "C:/OBS/obs-plugins/64bit"
   RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "C:/OBS/obs-plugins/64bit"
   RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "C:/OBS/obs-plugins/64bit"
   RUNTIME_OUTPUT_DIRECTORY_COVERAGE "C:/OBS/obs-plugins/64bit")
 
-# Executable
-add_executable(horus src/main.cpp src/main.manifest src/main.rc)
-target_compile_features(horus PRIVATE cxx_std_23)
-target_include_directories(horus PRIVATE src)
-add_dependencies(horus plugin)
+# Demo
+add_executable(demo src/main.cpp src/main.manifest src/main.rc)
+target_compile_features(demo PRIVATE cxx_std_23)
+target_include_directories(demo PRIVATE src)
+add_dependencies(demo horus)
 
-set_target_properties(horus PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY_DEBUG "C:/OBS/"
-  RUNTIME_OUTPUT_DIRECTORY_RELEASE "C:/OBS"
-  RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "C:/OBS"
-  RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "C:/OBS"
-  RUNTIME_OUTPUT_DIRECTORY_COVERAGE "C:/OBS")
+# Terminate
+add_executable(terminate src/terminate.cpp src/main.manifest)
+target_compile_features(terminate PRIVATE cxx_std_23)
+
+add_custom_command(TARGET horus PRE_BUILD COMMAND $<TARGET_FILE:terminate>)

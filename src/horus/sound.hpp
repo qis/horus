@@ -99,4 +99,6 @@ private:
   static inline bool initialized{ false };
 };
 
+void announce(const char* name) noexcept;
+
 }  // namespace horus

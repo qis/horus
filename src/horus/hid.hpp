@@ -1,8 +1,8 @@
 #pragma once
 #include "config.hpp"
+#include <horus/timer.hpp>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/udp.hpp>
-#include <boost/asio/steady_timer.hpp>
 #include <dinput.h>
 #include <dinputd.h>
 #include <array>
@@ -162,7 +162,7 @@ private:
   std::uint64_t mouse_movement_{ 0 };
   std::atomic_uint64_t mouse_movement_shared_{ 0 };
 
-  boost::asio::steady_timer timer_;
+  timer timer_;
   boost::asio::ip::udp::socket socket_;
   boost::asio::ip::udp::endpoint endpoint_;
   std::array<std::uint8_t, 4> data_{};

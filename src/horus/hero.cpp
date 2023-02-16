@@ -16,9 +16,9 @@ __forceinline std::pair<double, double> mouse2view(double mx, double my) noexcep
   return { mx * mf, my * mf };
 }
 
-constexpr std::pair<std::int16_t, std::int16_t> view2mouse(double mx, double my) noexcept
+constexpr std::pair<std::int16_t, std::int16_t> view2mouse(double vx, double vy) noexcept
 {
-  return { static_cast<std::int16_t>(mx / mf), static_cast<std::int16_t>(my / mf) };
+  return { static_cast<std::int16_t>(vx / mf), static_cast<std::int16_t>(vy / mf) };
 }
 
 __forceinline cv::Point center(const cv::Rect& rect) noexcept
@@ -26,7 +26,7 @@ __forceinline cv::Point center(const cv::Rect& rect) noexcept
   return { rect.x + rect.width / 2, rect.y + rect.height / 2 };
 }
 
-__forceinline cv::Point centroid(const eye::polygon& polygon, double spread = 0.0) noexcept
+__forceinline cv::Point centroid(const eye::polygon& polygon) noexcept
 {
   cv::Point point;
   const auto rect = cv::boundingRect(polygon);
@@ -40,9 +40,6 @@ __forceinline cv::Point centroid(const eye::polygon& polygon, double spread = 0.
     }
   } else {
     point = center(rect);
-  }
-  if (const auto top = rect.y + spread; top < point.y) {
-    point.y = top;
   }
   return point;
 }
@@ -162,6 +159,65 @@ private:
 
 }  // namespace
 
+class hitscan : public base {
+public:
+  hitscan(boost::asio::any_io_executor executor, eye& eye, hid& hid) noexcept :
+    base(executor, eye, hid)
+  {}
+
+  bool scan(clock::time_point tp, bool focus) noexcept override
+  {
+    // Handle trigger key.
+    trigger_ = down(button::left);
+    if (!trigger_) {
+      return false;
+    }
+
+    // Get targets.
+    const auto& targets = eye_.hulls();
+
+    // Update mouse movement.
+    mp_.update(movement(), tp);
+    vc_ = eye::vc + mp_.va();
+
+    // Acquire target.
+    cv::Point vd(0, 0);
+    auto mv = eye::vw * 2.0;
+    for (const auto& target : targets) {
+      if (cv::pointPolygonTest(target, vc_, true) > 0.0) {
+        return true;
+      }
+      const auto cvd = centroid(target) - vc_;
+      if (const auto cmv = cv::norm(cvd); cmv < mv) {
+        mv = cmv;
+        vd = cvd;
+      }
+    }
+    if (std::abs(vd.x) > 16.0 || !focus) {
+      return true;
+    }
+
+    // Adjust aim.
+    const auto vx = std::clamp(vd.x * 0.8, -1.5, 1.5);
+    move(view2mouse(vx, 0.0).first, 0);
+    return true;
+  }
+
+  bool draw(cv::Mat& overlay) noexcept override
+  {
+    if (trigger_) {
+      eye_.draw_hulls(overlay);
+      eye_.draw(overlay, vc_, 0xD50000FF);
+    }
+    return false;
+  }
+
+private:
+  cv::Point vc_{};
+  mouse_prediction mp_{ 3 };
+  bool trigger_{ false };
+};
+
 class ana : public base {
 public:
   // Controls
@@ -182,7 +238,7 @@ public:
     return "ana";
   }
 
-  bool scan(clock::time_point tp) noexcept override
+  bool scan(clock::time_point tp, bool focus) noexcept override
   {
     // Get targets.
     const auto& targets = eye_.polygons();
@@ -222,7 +278,7 @@ public:
     } else if (pressed(button::right)) {
       lockout_ = now + 300ms;
     }
-    if (now < lockout_ || !trigger_) {
+    if (now < lockout_ || !trigger_ || !focus) {
       return true;
     }
 
@@ -435,7 +491,7 @@ private:
   clock::time_point valkyrie_timeout_{};
 };
 
-class bastion : public base {
+class bastion : public hitscan {
 public:
   // Controls
   // ========
@@ -444,7 +500,7 @@ public:
   //   JUMP: SPACE | MOUSE BUTTON 5
 
   bastion(boost::asio::any_io_executor executor, eye& eye, hid& hid) noexcept :
-    base(executor, eye, hid)
+    hitscan(executor, eye, hid)
   {}
 
   const char* name() const noexcept override
@@ -489,7 +545,7 @@ public:
     return "reaper";
   }
 
-  bool scan(clock::time_point tp) noexcept override
+  bool scan(clock::time_point tp, bool focus) noexcept override
   {
     // Get targets.
     const auto& targets = eye_.hulls();
@@ -507,39 +563,57 @@ public:
     for (const auto& target : targets) {
       for (const auto& point : points_) {
         if (cv::pointPolygonTest(target, point, false) > 0.0) {
-          vd = vc_ - point;
+          vd = centroid(target) - vc_;
           goto acquired;
         }
       }
-      if (cv::norm(centroid(target, spread) - vc_) < spread / 2.0) {
+      vd = centroid(target) - vc_;
+      if (cv::norm(vd) < spread / 2.0) {
         goto acquired;
       }
     }
     target_ = false;
   acquired:
 
+    // Get current time.
+    const auto now = clock::now();
+
     // Set trigger state.
     trigger_ = down(button::right);
 
-    // Handle lockout and trigger key.
-    const auto now = clock::now();
-    if (down(button::left)) {
-      lockout_ = now + 128ms;
+    // Handle trigger key.
+    if (!trigger_ || !focus) {
+      lockout_ = now + 64ms;
+      fire_ = false;
+      return true;
     }
-    if (now < lockout_ || !trigger_) {
+
+    // Handle manual fire key.
+    if (down(button::left)) {
+      lockout_ = now + 64ms;
+      fire_ = false;
+      return true;
+    }
+
+    // Adjust aim.
+    if (fire_) {
+      const auto vx = std::clamp(vd.x * 0.8, -10.0, 10.0);
+      move(view2mouse(vx, 0.0).first, 0);
+      mask(button::up, 16ms, 1ms);
+      fire_ = false;
+    }
+
+    // Handle lockout.
+    if (now < lockout_) {
       return true;
     }
 
     // Adjust crosshair and fire.
     if (target_) {
-      if (cv::norm(vd) > 1.0) {
-        const auto md = view2mouse(vd.x, vd.y);
-        move(md.first, md.second);
-        mask(button::up, 16ms, 16us);
-      } else {
-        mask(button::up, 16ms);
-      }
-      lockout_ = now + 128ms;
+      const auto vx = std::clamp(vd.x * 0.8, -10.0, 10.0);
+      move(view2mouse(vx, 0.0).first, 0);
+      lockout_ = now + 500ms;
+      fire_ = true;
     }
     return true;
   }
@@ -550,7 +624,7 @@ public:
     eye_.draw_hulls(overlay);
     if constexpr (draw_centroids) {
       for (const auto& target : eye_.hulls()) {
-        eye_.draw(overlay, centroid(target, spread), 0x64DD17FF);
+        eye_.draw(overlay, centroid(target), 0x64DD17FF);
       }
     }
     if (trigger_) {
@@ -561,14 +635,6 @@ public:
     return false;
   }
 
-  boost::asio::awaitable<void> update() noexcept override
-  {
-    if (pressed(key::f12)) {
-      move(700, 0);
-    }
-    co_return;
-  }
-
 private:
   cv::Point vc_{};
   mouse_prediction mp_{ 3 };
@@ -576,10 +642,11 @@ private:
   clock::time_point lockout_{};
   bool trigger_{ false };
   bool target_{ false };
+  bool fire_{ false };
   std::string info_;
 };
 
-class soldier : public base {
+class soldier : public hitscan {
 public:
   // Controls
   // ========
@@ -589,7 +656,7 @@ public:
   //   ABILITY 1: LSHIFT | MOUSE BUTTON 4
 
   soldier(boost::asio::any_io_executor executor, eye& eye, hid& hid) noexcept :
-    base(executor, eye, hid)
+    hitscan(executor, eye, hid)
   {}
 
   const char* name() const noexcept override
@@ -664,6 +731,7 @@ public:
 
   bool draw(cv::Mat& overlay) noexcept override
   {
+    hitscan::draw(overlay);
     if (burst_.load(std::memory_order_acquire)) {
       info_.clear();
       const auto start = burst_start_.load(std::memory_order_acquire);
@@ -682,6 +750,7 @@ private:
 
   std::atomic_bool burst_{ false };
   std::atomic<clock::time_point> burst_start_;
+
   std::string info_;
 };
 

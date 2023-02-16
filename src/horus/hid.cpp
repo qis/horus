@@ -201,6 +201,10 @@ void hid::mask(
 
 void hid::move(std::int16_t x, std::int16_t y) noexcept
 {
+  if (!x && !y) {
+    return;
+  }
+
   data_[0] = static_cast<std::uint8_t>(static_cast<uint16_t>(x) & 0xFF);
   data_[1] = static_cast<std::uint8_t>(static_cast<uint16_t>(x) >> 8 & 0xFF);
   data_[2] = static_cast<std::uint8_t>(static_cast<uint16_t>(y) & 0xFF);

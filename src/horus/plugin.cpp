@@ -204,7 +204,7 @@ public:
     const auto scan = eye_.scan({ eye::sw, eye::sh, CV_8UC1, data, step });
 
     // Process hero.
-    if (const auto hero = hero_; !hero || !hero->scan(tp0)) {
+    if (const auto hero = hero_; !hero || !hero->scan(tp0, focus_.load(std::memory_order_acquire))) {
       if (view_ == view::hulls) {
         eye_.hulls();
       } else if (view_ == view::polygons) {

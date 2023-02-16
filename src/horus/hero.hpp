@@ -22,7 +22,7 @@ public:
 
   virtual const char* name() const noexcept = 0;
 
-  virtual bool scan(clock::time_point tp) noexcept
+  virtual bool scan(clock::time_point tp, bool focus) noexcept
   {
     return false;
   }

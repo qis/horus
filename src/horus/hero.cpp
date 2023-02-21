@@ -523,6 +523,143 @@ public:
   }
 };
 
+class mccree : public base {
+public:
+  // Controls
+  // ========
+  // + WEAPONS & ABILITIES
+  //   PRIMARY FIRE: LEFT MOUSE BUTTON | MOUSE BUTTON 5
+  //   SECONDARY FIRE: MOUSE BUTTON 4
+
+  mccree(boost::asio::any_io_executor executor, eye& eye, hid& hid) noexcept :
+    base(executor, eye, hid)
+  {}
+
+  const char* name() const noexcept override
+  {
+    return "mccree";
+  }
+
+  bool scan(clock::time_point tp, bool focus) noexcept override
+  {
+    // Get targets.
+    const auto& targets = eye_.polygons();
+
+    // Update mouse movement.
+    mp_.update(movement(), tp);
+    vc_ = eye::vc + mp_.va();
+
+    // Create points between mouse movement and center of view.
+    connect_view_points(points_, vc_, eye::vc, 1);
+
+    // Acquire target.
+    target_ = true;
+    cv::Point vd(0, 0);
+    for (const auto& target : eye_.polygons()) {
+      const auto rect = cv::boundingRect(target);
+      const auto margin = std::max(1.0, rect.width / 16.0);
+      for (const auto& point : points_) {
+        if (cv::pointPolygonTest(target, point, true) > margin) {
+          vd = vc_ - point;
+          goto acquired;
+        }
+      }
+    }
+    target_ = false;
+  acquired:
+
+    // Set trigger state.
+    trigger_ = down(button::right);
+
+    // Handle lockout.
+    const auto now = clock::now();
+    if (down(button::left)) {
+      lockout_ = now + 500ms;
+    }
+    if (now < lockout_ || !trigger_ || !focus) {
+      return true;
+    }
+
+    // Fire if a target was acquired.
+    if (target_) {
+      if (cv::norm(vd) > 1.0) {
+        const auto md = view2mouse(vd.x, vd.y);
+        move(md.first, md.second);
+        mask(button::up, 160ms, 16us);
+      } else {
+        mask(button::up, 160ms);
+      }
+      lockout_ = now + 500ms;
+    }
+    return true;
+  }
+
+  boost::asio::awaitable<void> update() noexcept override
+  {
+    // How much ammo is available.
+    constexpr auto ammo = 6;
+
+    // After how many ammo changes the recoil increases.
+    constexpr auto ammo_increase = 1;
+
+    // How long it takes for the ammo value to change.
+    constexpr auto ammo_interval = 116ms;
+
+    // How long to wait after left button down and recoil copmensation.
+    constexpr auto compensate_delay = 16ms;
+
+    // How long to wait between recoil compensation injects.
+    constexpr auto compensate_interval = 16ms;
+
+    // How much to move the mouse for each ammo value change.
+    constexpr auto compensate_ammo = view2mouse(0.0, 25.0).second;
+
+    // How often to move the mouse between ammo value changes.
+    constexpr auto compensate_count = (ammo_interval - compensate_interval) / compensate_interval;
+
+    // Mouse movement per inject before and after increase.
+    constexpr auto compensate_move = compensate_ammo / compensate_count;
+
+    // Compensate for recoil.
+    const auto now = clock::now();
+    if (down(button::left) || down(key::r) || down(key::alt)) {
+      compensate_ = false;
+    } else if (pressed(button::down)) {
+      compensate_increase_ = now + ammo_interval * ammo_increase;
+      compensate_ammo_ = now + ammo_interval * ammo;
+      compensate_next_ = now + compensate_delay;
+      compensate_ = true;
+    } else if (compensate_ && now > compensate_next_) {
+      move(0, compensate_move);
+      compensate_next_ = now + compensate_interval;
+      compensate_ = now < compensate_ammo_;
+    }
+    co_return;
+  }
+
+  bool draw(cv::Mat& overlay) noexcept override
+  {
+    if (trigger_) {
+      eye_.draw_hulls(overlay);
+      eye_.draw(overlay, vc_, 0xD50000FF);
+    }
+    return false;
+  }
+
+private:
+  cv::Point vc_{};
+  mouse_prediction mp_{ 3 };
+  std::vector<cv::Point> points_;
+  clock::time_point lockout_{};
+  bool trigger_{ false };
+  bool target_{ false };
+
+  bool compensate_{ false };
+  clock::time_point compensate_increase_{};
+  clock::time_point compensate_next_{};
+  clock::time_point compensate_ammo_{};
+};
+
 class reaper : public base {
 public:
   // Controls
@@ -754,6 +891,103 @@ private:
   std::string info_;
 };
 
+class widowmaker : public base {
+public:
+  // Controls
+  // ========
+  // + HERO
+  //   RELATIVE AIM SENSITIVITY WHILE ZOOMED: 30.00%
+  //   RECOIL RECOVERY AIM COMPENSATION: OFF
+  // + WEAPONS & ABILITIES
+  //   PRIMARY FIRE: LEFT MOUSE BUTTON | MOUSE BUTTON 5
+
+  widowmaker(const boost::asio::any_io_executor& executor, eye& eye, hid& hid) noexcept :
+    base(executor, eye, hid)
+  {}
+
+  const char* name() const noexcept override
+  {
+    return "widowmaker";
+  }
+
+  bool scan(clock::time_point tp, bool focus) noexcept override
+  {
+    // Get targets.
+    const auto& targets = eye_.polygons();
+
+    // Update mouse movement.
+    mp_.update(movement(), tp);
+    vc_ = eye::vc + mp_.va();
+
+    // Create points between mouse movement and center of view.
+    connect_view_points(points_, vc_, eye::vc, 1);
+
+    // Acquire target.
+    target_ = true;
+    cv::Point vd(0, 0);
+    for (const auto& target : eye_.polygons()) {
+      const auto rect = cv::boundingRect(target);
+      const auto margin = std::max(1.0, rect.width / 16.0);
+      for (const auto& point : points_) {
+        if (cv::pointPolygonTest(target, point, true) > margin) {
+          vd = vc_ - point;
+          goto acquired;
+        }
+      }
+    }
+    target_ = false;
+  acquired:
+
+    // Set trigger state.
+    const auto scoped = down(button::right) && up(button::down);
+    const auto manual = down(button::down) && up(button::right);
+    trigger_ = scoped || manual;
+
+    // Handle lockout.
+    const auto now = clock::now();
+    if (down(button::left) || pressed(button::right)) {
+      lockout_ = now + 1300ms;
+    }
+    if (now < lockout_ || !trigger_ || !focus) {
+      return true;
+    }
+
+    // Fire if a target was acquired.
+    if (target_) {
+      if (cv::norm(vd) > 1.0) {
+        const auto md = view2mouse(vd.x, vd.y);
+        move(md.first, md.second);
+        mask(button::up, 16ms, 16us);
+      } else {
+        mask(button::up, 16ms);
+      }
+      lockout_ = now + 1300ms;
+    }
+    return true;
+  }
+
+  bool draw(cv::Mat& overlay) noexcept override
+  {
+    info_.clear();
+    eye_.draw_polygons(overlay);
+    if (trigger_) {
+      eye_.draw(overlay, vc_, target_ ? 0xD50000FF : 0x00B0FFFF);
+    }
+    std::format_to(std::back_inserter(info_), "{:05.1f} x | {:05.1f} y", mp_.vx(), mp_.vy());
+    eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
+    return false;
+  }
+
+private:
+  cv::Point vc_{};
+  mouse_prediction mp_{ 3 };
+  std::vector<cv::Point> points_;
+  clock::time_point lockout_{};
+  bool trigger_{ false };
+  bool target_{ false };
+  std::string info_;
+};
+
 using hero_factory = std::function<std::shared_ptr<base>(boost::asio::any_io_executor, eye&, hid&)>;
 
 std::shared_ptr<base> next_hero(
@@ -825,6 +1059,12 @@ std::shared_ptr<base> next_damage_hero(
       },
     },
     {
+      "mccree",
+      [](boost::asio::any_io_executor executor, horus::eye& eye, horus::hid& hid) {
+        return std::make_shared<mccree>(executor, eye, hid);
+      },
+    },
+    {
       "reaper",
       [](boost::asio::any_io_executor executor, horus::eye& eye, horus::hid& hid) {
         return std::make_shared<reaper>(executor, eye, hid);
@@ -834,6 +1074,12 @@ std::shared_ptr<base> next_damage_hero(
       "soldier",
       [](boost::asio::any_io_executor executor, horus::eye& eye, horus::hid& hid) {
         return std::make_shared<soldier>(executor, eye, hid);
+      },
+    },
+    {
+      "widowmaker",
+      [](boost::asio::any_io_executor executor, horus::eye& eye, horus::hid& hid) {
+        return std::make_shared<widowmaker>(executor, eye, hid);
       },
     },
   };

@@ -95,7 +95,6 @@ The published code only demonstrates methods and possibilities of high performan
 image recognition. The mouse input injection code is private and won't be released.
 
 This software cannot be used to gain an unfair advantage in a competitive game.
-You can't use it to cheat.
 
 This project will be deleted if I move to a different jurisdiction.
 

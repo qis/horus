@@ -545,28 +545,27 @@ public:
     // Get targets.
     const auto& targets = eye_.polygons();
 
-    // Update mouse movement.
-    mp_.update(movement(), tp);
-    vc_ = eye::vc + mp_.va();
-
-    // Create points between mouse movement and center of view.
-    connect_view_points(points_, vc_, eye::vc, 1);
-
     // Acquire target.
-    target_ = true;
-    cv::Point vd(0, 0);
+    target_ = false;
+    auto min_distance = 0.0;
     for (const auto& target : eye_.polygons()) {
-      const auto rect = cv::boundingRect(target);
-      const auto margin = std::max(1.0, rect.width / 16.0);
-      for (const auto& point : points_) {
-        if (cv::pointPolygonTest(target, point, true) > margin) {
-          vd = vc_ - point;
-          goto acquired;
-        }
+      const auto distance = -cv::pointPolygonTest(target, eye::vc, true);
+      if (distance <= 0.0) {
+        min_distance = 0.0;
+        target_ = true;
+        break;
+      }
+      if (min_distance == 0.0 || distance < min_distance) {
+        min_distance = distance;
       }
     }
-    target_ = false;
-  acquired:
+    if (!target_ && distance_ > 0.0 && min_distance > 0.0) {
+      const auto difference = distance_ - min_distance;
+      if (distance_ - difference * 3 < 0.0) {
+        target_ = true;
+      }
+    }
+    distance_ = min_distance;
 
     // Set trigger state.
     trigger_ = down(button::right);
@@ -582,13 +581,7 @@ public:
 
     // Fire if a target was acquired.
     if (target_) {
-      if (cv::norm(vd) > 1.0) {
-        const auto md = view2mouse(vd.x, vd.y);
-        move(md.first, md.second);
-        mask(button::up, 160ms, 16us);
-      } else {
-        mask(button::up, 160ms);
-      }
+      mask(button::up, 160ms);
       lockout_ = now + 500ms;
     }
     return true;
@@ -639,17 +632,20 @@ public:
 
   bool draw(cv::Mat& overlay) noexcept override
   {
+    info_.clear();
     if (trigger_) {
       eye_.draw_hulls(overlay);
-      eye_.draw(overlay, vc_, 0xD50000FF);
+      eye_.draw(overlay, eye::vc, 0xD50000FF);
+    }
+    if (distance_ > 0.0) {
+      std::format_to(std::back_inserter(info_), "{:05.1f}", distance_);
+      eye_.draw(overlay, { 2, eye::vh - 40 }, info_);
     }
     return false;
   }
 
 private:
-  cv::Point vc_{};
-  mouse_prediction mp_{ 3 };
-  std::vector<cv::Point> points_;
+  double distance_{ 0.0 };
   clock::time_point lockout_{};
   bool trigger_{ false };
   bool target_{ false };
@@ -658,6 +654,8 @@ private:
   clock::time_point compensate_increase_{};
   clock::time_point compensate_next_{};
   clock::time_point compensate_ammo_{};
+
+  std::string info_;
 };
 
 class reaper : public base {
@@ -734,8 +732,10 @@ public:
 
     // Adjust aim.
     if (fire_) {
-      const auto vx = std::clamp(vd.x * 0.8, -10.0, 10.0);
-      move(view2mouse(vx, 0.0).first, 0);
+      if (target_) {
+        const auto vx = std::clamp(vd.x * 0.8, -10.0, 10.0);
+        move(view2mouse(vx, 0.0).first, 0);
+      }
       mask(button::up, 16ms, 1ms);
       fire_ = false;
     }

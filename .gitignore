@@ -12,5 +12,6 @@
 !/CMakePresets.json
 !/conan.profile
 !/conanfile.txt
+!/license.txt
 !/readme.md
 !/settings.md

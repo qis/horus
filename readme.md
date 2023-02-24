@@ -85,6 +85,20 @@ in the future when I have time.
 * Train a neural network to categorize the targets.
 * Calculate distance based on target category and polygon size.
 
+## Legal
+This software is fully compliant with German law.
+
+No reverse enginering, inspection or modification of commercial software was performed during
+the development and operation of the software.
+
+The published code only demonstrates methods and possibilities of high performance, low latency
+image recognition. The mouse input injection code is private and won't be released.
+
+This software cannot be used to gain an unfair advantage in a competitive game.
+You can't use it to cheat.
+
+This project will be deleted if I move to a different jurisdiction.
+
 ## Build
 This repository exists for demonstration purposes only. Build instructions are for the author's convenience.
 

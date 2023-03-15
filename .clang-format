@@ -5,7 +5,7 @@ BasedOnStyle: LLVM
 # Indent
 ConstructorInitializerIndentWidth: 2
 ContinuationIndentWidth: 2
-IndentPPDirectives: AfterHash
+IndentPPDirectives: None
 IndentRequiresClause: true
 LambdaBodyIndentation: Signature
 
@@ -72,7 +72,7 @@ Standard: c++20
 # Includes
 SortIncludes: CaseInsensitive
 IncludeCategories:
-    # Relative Paths
+  # Relative Paths
   - Regex: '^"'
     Priority: 1
 
@@ -81,40 +81,27 @@ IncludeCategories:
     Priority: 2
     SortPriority: 0
 
-    # Windows Core Headers
-  - Regex: '^<(ntifs|windows)\.h>'
-    Priority: 5
+  # Benchmark Headers
+  - Regex: '^<benchmark/'
+    Priority: 3
+    SortPriority: 0
 
-    # Windows Driver Headers
-  - Regex: '^<(ntddk|wdm)\.h>'
-    Priority: 6
-
-    # Windows Headers
-  - Regex: '^<(wdf|shellapi|winsock2|ws2tcpip|mswsock)\.h>'
-    Priority: 7
-
-    # GTest Headers
-  - Regex: '^<(gtest|gmock)/'
+  # Test Framework Headers
+  - Regex: '^<(doctest|gtest|gmock)/'
     Priority: 4
     SortPriority: 0
 
-    # Library Headers
+  # Library Headers
   - Regex: '^<.*\.'
-    Priority: 3
+    Priority: 5
 
-    # C Compatibility Headers
+  # C Compatibility Headers
   - Regex: '^<c(a|c|e|f|i|l|m|s|t|u|w)'
-    Priority: 9
+    Priority: 7
 
-    # C++ Standard Library Headers
+  # C++ Standard Library Headers
   - Regex: '^<'
-    Priority: 8
-
-# Sources: a.hpp is main include for a.cpp, a_test.cpp, etc.
-IncludeIsMainRegex: '(_test|_win32|_posix)?$'
-
-# Headers: a.hpp, a_base.hpp, etc. are main includes for a.cpp
-IncludeIsMainSourceRegex: '(_base|_impl)?$'
+    Priority: 6
 ---
 Language: ObjC
 DisableFormat: true

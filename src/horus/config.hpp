@@ -2,9 +2,9 @@
 #include <chrono>
 
 #ifdef HORUS_EXPORTS
-#  define HORUS_API __declspec(dllexport)
+#define HORUS_API __declspec(dllexport)
 #else
-#  define HORUS_API __declspec(dllimport)
+#define HORUS_API __declspec(dllimport)
 #endif
 
 #define HORUS_HID_ADDRESS "192.168.178.7"

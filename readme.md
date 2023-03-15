@@ -105,9 +105,16 @@ This repository exists for demonstration purposes only. Build instructions are f
 
 1. Install [OBS-Studio][obs] to `C:\OBS`.
 2. Extract [OBS-Studio][obs] source code to `C:\OBS\src`.
-3. Install [Python 3][py3] to `C:\Python`.
-4. Install [CUDA Toolkit][cuda] to `C:\CUDA`.
-5. Clone this repository to `C:\OBS\horus`.
+3. Install [CUDA Toolkit][cuda] to `C:\CUDA`.
+4. Install [Python 3][py].
+5. Install [Conan][conan].
+
+```cmd
+pip install "conan<2.0.0"
+```
+
+6. Install [Visual Studio][vs] with C++ and CMake support.
+7. Clone project. Use `x64 Native Tools Command Prompt for VS 2022`.
 
 ```cmd
 git clone git@github.com:qis/horus C:/OBS/horus
@@ -115,34 +122,28 @@ cd C:\OBS\horus
 git submodule update --init --depth 1
 ```
 
-6. Install dependencies using [Conan][conan].
-
-<!--
-* Set the system environment variable `CONAN_USER_HOME_SHORT` to `None`.
-* Upgrade pip with `python -m pip install --upgrade pip`.
-* Upgrade conan with `pip install conan --upgrade`.
--->
+8. Install dependencies.
 
 ```cmd
-cd C:\OBS\horus
 conan install . -if third_party -pr conan.profile
 ```
 
-7. Build [OpenCV][opencv] in `x64 Native Tools Command Prompt for VS 2022`.
+9. Build [OpenCV][opencv] in `x64 Native Tools Command Prompt for VS 2022`.
 
 ```cmd
-cd C:\OBS\horus\third_party\opencv
+cd third_party\opencv
 cmake -B build --preset default
 cmake --build build --target install
 copy release\x64\vc17\bin\opencv_world470.dll C:\OBS\obs-plugins\64bit\
 ```
 
-9. Configure [OBS-Studio][obs] and Overwatch according to [settings.md](settings.md).
+Configure [OBS-Studio][obs] and Overwatch according to [settings.md](settings.md).
 
 </details>
 
+[py]: https://www.python.org/downloads/windows/
+[vs]: https://visualstudio.microsoft.com/vs/
 [obs]: https://github.com/obsproject/obs-studio/releases/tag/27.2.4
-[py3]: https://www.python.org/downloads/windows/
 [cuda]: https://developer.nvidia.com/cuda-downloads
 [conan]: https://conan.io/center/
 [opencv]: https://github.com/opencv/opencv/releases

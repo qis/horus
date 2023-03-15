@@ -1,8 +1,8 @@
 [requires]
-boost/[x]
-freetype/[x]
-harfbuzz/[x]
-sdl/[x]
+boost/[*]
+freetype/[*]
+harfbuzz/[*]
+sdl/[*]
 
 [generators]
 cmake_find_package

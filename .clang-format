@@ -103,17 +103,17 @@ IncludeCategories:
 
   # Benchmark Headers
   - Regex: '^<benchmark/'
-    Priority: 4
+    Priority: 3
     SortPriority: 0
 
   # Test Framework Headers
   - Regex: '^<(gtest|gmock|doctest)/'
-    Priority: 5
+    Priority: 4
     SortPriority: 0
 
   # Library Headers
   - Regex: '^<.*\.'
-    Priority: 3
+    Priority: 5
 
   # C Compatibility Headers
   - Regex: '^<c(a|c|e|f|i|l|m|s|t|u|w)'
